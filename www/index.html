@@ -1,0 +1,2965 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Spotify Synced Lyrics</title>
+<style>
+  /* тени/обводки и цвета подсветки строятся в JS (applyStyle) из настроек */
+  :root {
+    --fg-rgb: 255,255,255; --plate-rgb: 0,0,0; --bar-rgb: 255,255,255; --plate-a: .35;
+    --iplate-rgb: 0,0,0; --ibar-rgb: 255,255,255; --iplate-a: .4; --shrink: 58%;
+    --info-x: 0vw; --info-y: 0vh; --clock-x: 0vw; --clock-y: 0vh;
+    --tshadow: 0 0 2px rgba(0,0,0,.35), 0 2px 12px rgba(0,0,0,.35), 0 6px 32px rgba(0,0,0,.28);
+  }
+  :root { --fg: #fff; --shadow: rgba(0,0,0,.35); --fontsize: 44px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    background: #222;
+    color: var(--fg);
+    font-family: "Segoe UI", "Inter", Arial, sans-serif;
+    text-shadow: var(--tshadow);
+    -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision;
+    transition: background-color 1s ease, color 1s ease;
+  }
+  #eq { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: none; pointer-events: none; }
+  #bgimg { position: fixed; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); z-index: 0; display: none; background-repeat: no-repeat; background-position: center; background-size: cover; }
+  #stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: none; }
+  #waves { position: fixed; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); z-index: 0; display: none; }
+  #waves2 { position: fixed; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); z-index: 0; display: none; }
+  #waves3 { position: fixed; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); z-index: 0; display: none; }
+  #blurbg { position: fixed; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); z-index: 0; display: none; background: center / cover no-repeat;
+            transition: opacity .35s ease; animation: breathe 16s ease-in-out infinite alternate; }
+  @keyframes breathe { from { transform: scale(var(--bzoom, 1.2)); } to { transform: scale(calc(var(--bzoom, 1.2) + var(--bamp, .12))) rotate(2deg); } }
+  #mesh { position: fixed; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); z-index: 0; display: none; }
+  #snow { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: none; }
+  #fuse { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 2; display: none; pointer-events: none; }
+  /* виниловая пластинка поверх обложки: обложка становится этикеткой, пластинка вращается, пока играет музыка */
+  #vdisc { position: fixed; z-index: 1; display: none; pointer-events: none; border-radius: 50%; box-shadow: 0 2vh 6vh rgba(0,0,0,.5); }
+  #vdisc > div, .vd-rot > div { position: absolute; inset: 0; border-radius: 50%; }
+  .vd-rot { animation: vspin var(--vspin, 4s) linear infinite; animation-play-state: var(--vplay, paused); }
+  @keyframes vspin { to { transform: rotate(360deg); } }
+  .vd-disc { background: radial-gradient(circle closest-side, #000 0 4%, transparent 4.5%), repeating-radial-gradient(circle closest-side, #0c0c0c 0 1.2%, #1d1d1d 1.2% 2%); }
+  #vdisc .vd-label { inset: 31%; background: #444 center / cover no-repeat; box-shadow: 0 0 0 .3vw #111; }
+  .vd-label::after { content: ''; position: absolute; left: 50%; top: 50%; width: 9%; height: 9%; margin: -4.5% 0 0 -4.5%; border-radius: 50%; background: #111; }
+  .vd-gloss { background: conic-gradient(from 20deg, transparent 0 8%, rgba(255,255,255,.2) 12%, transparent 18% 50%, rgba(255,255,255,.13) 62%, transparent 70%); }
+  /* прогресс-бар трека: под названием и альбомом, двигается ползунками */
+  #prog { position: relative; margin-top: .2vh; width: var(--prog-w, 100%); display: none; color: var(--info-fg, var(--fg));
+          transform: translate(var(--prog-x, 0vw), var(--prog-y, 0vh)); }
+  /* кнопки управления треком прямо на обоях (4 минималистичных стиля) */
+  #mctrl {
+    position: relative; left: var(--ctrl-x, 0vw); top: var(--ctrl-y, 0vh);
+    display: flex; align-items: center; gap: .7vw; margin-top: -.4vh;
+    width: fit-content;
+    color: var(--ctrl-fg, var(--fg)); text-shadow: none;
+    transition: opacity .3s ease;
+  }
+  #mctrl.hidden { display: none; }
+  .mbtn {
+    width: 2.55vw; height: 2.55vw; min-width: 34px; min-height: 34px;
+    border-radius: 50%; border: 1px solid rgba(var(--fg-rgb), .2);
+    background: rgba(var(--iplate-rgb, 0,0,0), .28);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+    color: inherit; display: grid; place-items: center; cursor: pointer;
+    padding: 0; outline: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,.22);
+    transition: transform .15s ease, background-color .18s ease, border-color .18s ease, opacity .18s ease;
+  }
+  .mbtn.play { width: 2.95vw; height: 2.95vw; min-width: 40px; min-height: 40px; background: rgba(var(--iplate-rgb, 0,0,0), .42); }
+  .mbtn:hover { background: rgba(var(--fg-rgb), .18); border-color: rgba(var(--fg-rgb), .42); transform: scale(1.06); }
+  .mbtn:active, .mbtn.pulse { transform: scale(.91); background: rgba(var(--fg-rgb), .28); }
+  .mbtn svg { width: 46%; height: 46%; fill: currentColor; pointer-events: none; }
+
+  /* стиль «Чистые иконки»: ультра-минимализм без кругов и рамок */
+  #mctrl.cs-minimal { gap: 1.05vw; }
+  #mctrl.cs-minimal .mbtn {
+    width: 2.15vw; height: 2.15vw; min-width: 28px; min-height: 28px;
+    background: transparent; border: none; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; opacity: .78;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,.4));
+  }
+  #mctrl.cs-minimal .mbtn.play { width: 2.55vw; height: 2.55vw; min-width: 34px; min-height: 34px; opacity: 1; }
+  #mctrl.cs-minimal .mbtn svg { width: 72%; height: 72%; }
+  #mctrl.cs-minimal .mbtn:hover { background: transparent; opacity: 1; transform: scale(1.14); }
+  #mctrl.cs-minimal .mbtn:active, #mctrl.cs-minimal .mbtn.pulse { background: transparent; transform: scale(.88); }
+
+  /* стиль «Капсула»: единая стеклянная таблетка */
+  #mctrl.cs-pill {
+    gap: .35vw; padding: .3vw .55vw; border-radius: 999px;
+    background: rgba(var(--iplate-rgb, 0,0,0), .34);
+    border: 1px solid rgba(var(--fg-rgb), .16);
+    -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25);
+    box-shadow: 0 6px 20px rgba(0,0,0,.28);
+  }
+  #mctrl.cs-pill .mbtn {
+    width: 2.3vw; height: 2.3vw; min-width: 30px; min-height: 30px;
+    background: transparent; border: none; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #mctrl.cs-pill .mbtn.play { width: 2.55vw; height: 2.55vw; min-width: 34px; min-height: 34px; background: rgba(var(--fg-rgb), .14); }
+  #mctrl.cs-pill .mbtn:hover { background: rgba(var(--fg-rgb), .2); transform: scale(1.05); }
+
+  /* стиль «Тонкие кольца»: прозрачные контуры */
+  #mctrl.cs-outline .mbtn {
+    background: transparent; border: 1.5px solid currentColor; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; opacity: .82;
+  }
+  #mctrl.cs-outline .mbtn.play { background: transparent; border-width: 2px; opacity: 1; }
+  #mctrl.cs-outline .mbtn:hover { background: rgba(var(--fg-rgb), .14); opacity: 1; transform: scale(1.07); }
+
+  /* стиль «Скруглённые квадраты (iOS)»: мягкие сквирклы */
+  #mctrl.cs-squircle { gap: .6vw; }
+  #mctrl.cs-squircle .mbtn { border-radius: 28%; }
+  #mctrl.cs-squircle .mbtn.play { width: 3.6vw; min-width: 48px; border-radius: 26%; }
+
+  /* стиль «Ромбы»: геометрические повёрнутые квадраты */
+  #mctrl.cs-diamond { gap: 1.15vw; padding: .35vw .25vw; }
+  #mctrl.cs-diamond .mbtn {
+    width: 2.25vw; height: 2.25vw; min-width: 30px; min-height: 30px;
+    border-radius: 18%; transform: rotate(45deg);
+  }
+  #mctrl.cs-diamond .mbtn.play { width: 2.65vw; height: 2.65vw; min-width: 36px; min-height: 36px; }
+  #mctrl.cs-diamond .mbtn svg { transform: rotate(-45deg); }
+  #mctrl.cs-diamond .mbtn:hover { transform: rotate(45deg) scale(1.1); }
+  #mctrl.cs-diamond .mbtn:active, #mctrl.cs-diamond .mbtn.pulse { transform: rotate(45deg) scale(.9); }
+
+  /* стиль «Единая панель (док)»: полоса во всю ширину обложки с разделителями */
+  #mctrl.cs-dock {
+    width: 100%; gap: 0; border-radius: .75vw; overflow: hidden;
+    background: rgba(var(--iplate-rgb, 0,0,0), .34);
+    border: 1px solid rgba(var(--fg-rgb), .16);
+    -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25);
+    box-shadow: 0 6px 20px rgba(0,0,0,.26);
+  }
+  #mctrl.cs-dock .mbtn {
+    flex: 1; width: auto; height: 2.65vw; min-height: 36px;
+    border-radius: 0; border: none; background: transparent; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #mctrl.cs-dock .mbtn.play {
+    flex: 1.35; width: auto; height: 2.65vw; min-height: 36px;
+    border-left: 1px solid rgba(var(--fg-rgb), .12);
+    border-right: 1px solid rgba(var(--fg-rgb), .12);
+    background: rgba(var(--fg-rgb), .07);
+  }
+  #mctrl.cs-dock .mbtn svg { width: 1.15vw; height: 1.15vw; min-width: 16px; min-height: 16px; }
+  #mctrl.cs-dock .mbtn:hover { background: rgba(var(--fg-rgb), .16); transform: none; }
+  #mctrl.cs-dock .mbtn:active, #mctrl.cs-dock .mbtn.pulse { background: rgba(var(--fg-rgb), .26); transform: none; }
+
+  /* стиль «Нижние полоски»: чистые иконки с акцентной линией снизу */
+  #mctrl.cs-underline { gap: 1.1vw; }
+  #mctrl.cs-underline .mbtn {
+    position: relative; width: 2.35vw; height: 2.35vw; min-width: 30px; min-height: 30px;
+    border-radius: 0; border: none; background: transparent; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; opacity: .82;
+  }
+  #mctrl.cs-underline .mbtn::after {
+    content: ''; position: absolute; left: 22%; right: 22%; bottom: 0; height: 2px; border-radius: 2px;
+    background: currentColor; opacity: .45; transition: left .16s ease, right .16s ease, opacity .16s ease;
+  }
+  #mctrl.cs-underline .mbtn.play { width: 2.75vw; height: 2.5vw; min-width: 36px; opacity: 1; }
+  #mctrl.cs-underline .mbtn.play::after { left: 10%; right: 10%; height: 2.5px; opacity: .95; }
+  #mctrl.cs-underline .mbtn svg { width: 62%; height: 62%; }
+  #mctrl.cs-underline .mbtn:hover { background: transparent; opacity: 1; transform: translateY(-2px); }
+  #mctrl.cs-underline .mbtn:hover::after { left: 6%; right: 6%; opacity: 1; }
+  #mctrl.cs-underline .mbtn:active, #mctrl.cs-underline .mbtn.pulse { background: transparent; transform: translateY(1px); }
+
+  /* стиль «Шестиугольники»: соты */
+  #mctrl.cs-hex { gap: .6vw; }
+  #mctrl.cs-hex .mbtn {
+    width: 2.75vw; height: 2.5vw; min-width: 36px; min-height: 32px;
+    border-radius: 0; border: none;
+    clip-path: polygon(25% 4%, 75% 4%, 98% 50%, 75% 96%, 25% 96%, 2% 50%);
+  }
+  #mctrl.cs-hex .mbtn.play { width: 3.15vw; height: 2.85vw; min-width: 42px; min-height: 38px; }
+
+  /* стиль «Компактный мини-бар»: строгий минимал-акцент */
+  #mctrl.cs-compact { gap: .45vw; }
+  #mctrl.cs-compact .mbtn {
+    width: 2.05vw; height: 2.05vw; min-width: 26px; min-height: 26px;
+    border-radius: 6px; background: rgba(var(--iplate-rgb, 0,0,0), .22);
+    border: 1px solid rgba(var(--fg-rgb), .12); box-shadow: none;
+  }
+  #mctrl.cs-compact .mbtn.play {
+    width: 3.2vw; height: 2.05vw; min-width: 42px; min-height: 26px;
+    border-radius: 6px; background: currentColor; border-color: transparent;
+  }
+  #mctrl.cs-compact .mbtn.play svg { fill: rgb(var(--iplate-rgb, 12,12,16)); width: 42%; height: 62%; }
+
+  #pbar { position: relative; height: .35vh; border-radius: 1vh; background: rgba(var(--prog-rgb, 255,255,255), .28); overflow: hidden; cursor: pointer; transition: height .15s ease; }
+  #pbar:hover { height: .65vh; }
+  #pfill { height: 100%; width: 0; border-radius: inherit; background: rgb(var(--prog-rgb, 255,255,255)); pointer-events: none; }
+  #prog.ps-thick #pbar { height: .9vh; }
+  #prog.ps-seg #pbar { height: .9vh; border-radius: 0; -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 .45vw, transparent .45vw .6vw); mask-image: repeating-linear-gradient(90deg, #000 0 .45vw, transparent .45vw .6vw); }
+  #prog.ps-seg #pfill { border-radius: 0; }
+  #prog.ps-fuse #pbar { display: none; }
+  #ptime { display: flex; justify-content: space-between; margin-top: .6vh; font-size: 1.1vw; opacity: .8; font-variant-numeric: tabular-nums; }
+  #prog.ps-fuse #ptime { display: none; }
+  #prog.notime #ptime { display: none; }
+  #blobs { position: fixed; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); z-index: 0; display: none; }
+  #grain { position: fixed; inset: 0; z-index: 0; display: none; pointer-events: none; opacity: .5; }
+  #app { position: relative; z-index: 1; display: flex; width: 100%; height: 100%; align-items: center; padding: 0 6vw; gap: 5vw; }
+
+  #left { position: relative; flex: 0 0 30vw; display: flex; flex-direction: column; gap: 2vh; transition: transform .9s cubic-bezier(.65, 0, .25, 1); }
+  #app.centered #left { transform: translateX(29vw); }          /* центр блока слева (21vw) -> центр экрана (50vw) */
+  /* текст песен: уходит вправо с размытием, приходит справа чуть позже обложки */
+  #lyrics { transition: opacity .45s ease, transform .6s cubic-bezier(.2, .8, .2, 1), filter .45s ease; }
+  #app:not(.centered) #lyrics { transition-delay: .25s; }
+  #app.centered #lyrics { opacity: 0; transform: translateX(6vw); filter: blur(8px); pointer-events: none; }
+  /* местное время над обложкой: едет вместе с блоком трека и плавно увеличивается в центре */
+  #clock { position: relative; left: var(--clock-x); top: var(--clock-y); transform-origin: left bottom; transform: scale(1); transition: transform .9s cubic-bezier(.65, 0, .25, 1); }
+  #app.centered #clock { transform: scale(1.6); }
+  #ctime { font-size: calc(3.2vw * var(--clocksize, 1)); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  #ctime .ampm { font-size: .4em; font-weight: 600; margin-left: .3em; opacity: .7; }
+  #cdate { font-size: calc(1.3vw * var(--clocksize, 1)); opacity: .65; margin-top: .3vh; }
+  #cover {
+    width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: var(--cover-r, 4%);
+    box-shadow: 0 2vh 6vh rgba(0,0,0,.45); background: rgba(128,128,128,.25);
+    transition: opacity .5s ease, width .9s cubic-bezier(.65, 0, .25, 1), margin-bottom .9s cubic-bezier(.65, 0, .25, 1), box-shadow .9s ease;
+  }
+  /* HD-обложки нет: остаётся только миниатюра — плавно уменьшаем; нет вообще никакой — обложка складывается, название поднимается на её место */
+  #left.cover-small #cover { width: var(--shrink, 58%); }
+  #left.cover-none #cover { width: 0; margin-bottom: -2vh; opacity: 0 !important; box-shadow: none; }
+  /* ничего не играет: без пустого прямоугольника обложки / без надписи */
+  #left.idle-nocover #cover { width: 0; margin-bottom: -2vh; opacity: 0 !important; box-shadow: none; }
+  #left.idle-notext #info { display: none; }
+  #title  { font-size: 2.2vw; font-weight: 700; line-height: 1.2; }
+  #artist { font-size: 1.5vw; opacity: .75; }
+  #album  { font-size: 1.2vw; opacity: .55; margin-top: .6vh; display: none; }
+  /* блок «название / исполнитель / альбом»: своя обводка и необязательная подложка (мыльный прямоугольник) */
+  #info { position: relative; left: var(--info-x); top: var(--info-y); width: fit-content; max-width: 100%; padding: .7vw 1vw; margin: -.7vw 0 -.7vw -1vw; border-radius: .9vw;
+          text-shadow: var(--ishadow, var(--tshadow)); transition: background-color .4s ease; }
+  #info.ip-plate { background-color: rgba(var(--iplate-rgb), var(--iplate-a)); }
+  #info.ip-glass { background-color: rgba(var(--iplate-rgb), calc(var(--iplate-a) * .6)); -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3); }
+  #info.ip-liquid { background: linear-gradient(160deg, rgba(255,255,255,.14), rgba(var(--iplate-rgb), calc(var(--iplate-a) * .55))); -webkit-backdrop-filter: blur(18px) saturate(1.45); backdrop-filter: blur(18px) saturate(1.45); border: 1px solid rgba(255,255,255,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.32), 0 8px 26px rgba(0,0,0,.28); }
+  #info.ip-neon { background-color: rgba(var(--iplate-rgb), calc(var(--iplate-a) * .35)); border: 1.5px solid rgba(var(--ibar-rgb), .9); box-shadow: 0 0 14px rgba(var(--ibar-rgb), .42), inset 0 0 12px rgba(var(--ibar-rgb), .2); }
+  #info.ip-underline { background: transparent; border-radius: 0; border-bottom: 2.5px solid rgb(var(--ibar-rgb)); box-shadow: 0 4px 14px -4px rgba(var(--ibar-rgb), .55); }
+  #info.ip-gradient { background-image: linear-gradient(90deg, rgba(var(--iplate-rgb), var(--iplate-a)), rgba(var(--iplate-rgb), 0)); }
+  #info.ip-halo { background: radial-gradient(ellipse at center, rgba(var(--iplate-rgb), var(--iplate-a)) 0%, rgba(var(--iplate-rgb), 0) 74%); box-shadow: 0 0 28px rgba(var(--iplate-rgb), calc(var(--iplate-a) * .65)); }
+  #info.ip-brackets { background-color: rgba(var(--iplate-rgb), calc(var(--iplate-a) * .28)); border-radius: .2em; background-image: linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))), linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))), linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))), linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))), linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))), linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))), linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))), linear-gradient(rgb(var(--ibar-rgb)), rgb(var(--ibar-rgb))); background-repeat: no-repeat; background-size: 14px 2.5px, 2.5px 14px, 14px 2.5px, 2.5px 14px, 14px 2.5px, 2.5px 14px, 14px 2.5px, 2.5px 14px; background-position: top left, top left, top right, top right, bottom left, bottom left, bottom right, bottom right; }
+  #lyrics { color: var(--lyric-fg, var(--fg)); }
+  #info { color: var(--info-fg, var(--fg)); }
+  #clock { color: var(--clock-fg, var(--fg)); text-shadow: var(--cshadow, var(--tshadow)); }
+  #info.ip-bar   { background-image: linear-gradient(90deg, rgba(var(--iplate-rgb), var(--iplate-a)), rgba(var(--iplate-rgb), 0)); box-shadow: inset .35vw 0 0 rgb(var(--ibar-rgb)); border-radius: .15em; }
+
+  #lyrics {
+    position: relative; flex: 1; height: 100vh; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+  }
+  #lyrics { margin-left: -70px; }
+  #track { position: absolute; left: 0; right: 0; top: 0; padding: 0 70px; transition: transform .6s cubic-bezier(.2,.8,.2,1); }
+  .line {
+    font-size: var(--fontsize); font-weight: 800; line-height: 1.25;
+    padding: .35em .45em; margin-left: -.45em; width: fit-content; max-width: calc(100% + .45em); border-radius: .3em;
+    opacity: .3; transform-origin: left center;
+    transform: scale(.88); transition: opacity .4s ease, transform .4s ease, background-color .4s ease;
+  }
+  .line.active { opacity: 1; transform: scale(1); color: var(--active-lyric-fg, var(--lyric-fg, var(--fg))); text-shadow: var(--ashadow, var(--tshadow)); }
+  /* плашка / подсветка текущей строки */
+  :root.ap-plate .line.active { background-color: rgba(var(--plate-rgb), var(--plate-a)); }
+  :root.ap-glass .line.active { background-color: rgba(var(--plate-rgb), calc(var(--plate-a) * .6)); -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3); }
+  :root.ap-liquid .line.active { background: linear-gradient(160deg, rgba(255,255,255,.15), rgba(var(--plate-rgb), calc(var(--plate-a) * .55))); -webkit-backdrop-filter: blur(18px) saturate(1.45); backdrop-filter: blur(18px) saturate(1.45); border: 1px solid rgba(255,255,255,.24); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 10px 30px rgba(0,0,0,.3); }
+  :root.ap-neon .line.active { background-color: rgba(var(--plate-rgb), calc(var(--plate-a) * .32)); border: 1.5px solid rgba(var(--bar-rgb), .92); box-shadow: 0 0 16px rgba(var(--bar-rgb), .48), inset 0 0 14px rgba(var(--bar-rgb), .22); }
+  :root.ap-underline .line.active { background: transparent; border-radius: 0; border-bottom: 3px solid rgb(var(--bar-rgb)); box-shadow: 0 6px 16px -4px rgba(var(--bar-rgb), .55); }
+  :root.ap-gradient .line.active { background-image: linear-gradient(90deg, rgba(var(--plate-rgb), var(--plate-a)), rgba(var(--plate-rgb), 0)); }
+  :root.ap-halo .line.active { background: radial-gradient(ellipse at center, rgba(var(--plate-rgb), var(--plate-a)) 0%, rgba(var(--plate-rgb), 0) 74%); box-shadow: 0 0 32px rgba(var(--plate-rgb), calc(var(--plate-a) * .65)); }
+  :root.ap-brackets .line.active { background-color: rgba(var(--plate-rgb), calc(var(--plate-a) * .28)); border-radius: .2em; background-image: linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))), linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))), linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))), linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))), linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))), linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))), linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))), linear-gradient(rgb(var(--bar-rgb)), rgb(var(--bar-rgb))); background-repeat: no-repeat; background-size: 16px 3px, 3px 16px, 16px 3px, 3px 16px, 16px 3px, 3px 16px, 16px 3px, 3px 16px; background-position: top left, top left, top right, top right, bottom left, bottom left, bottom right, bottom right; }
+  :root.ap-bar   .line.active { background-image: linear-gradient(90deg, rgba(var(--plate-rgb), var(--plate-a)), rgba(var(--plate-rgb), 0)); box-shadow: inset 6px 0 0 rgb(var(--bar-rgb)); border-radius: .15em; }
+
+  /* раскладки экрана: зеркальная (обложка справа) и кино/TV (обложка сверху, текст по центру) */
+  :root.lay-mirror #app { flex-direction: row-reverse; }
+  :root.lay-mirror #app.centered #left { transform: translateX(-29vw); }
+  :root.lay-mirror #app.centered #lyrics { transform: translateX(-6vw); }
+  :root.lay-mirror #lyrics { margin-left: 0; margin-right: -70px; }
+  :root.lay-mirror .line { margin-left: auto; margin-right: -.45em; text-align: right; transform-origin: right center; }
+
+  :root.lay-cinema #app:not(.centered) {
+    flex-direction: column; justify-content: flex-start; align-items: center;
+    padding: 3vh 7vw 0; gap: 1.4vh;
+  }
+  :root.lay-cinema #app.centered { justify-content: center; }
+  :root.lay-cinema #app.centered #left { transform: none; }
+  :root.lay-cinema #app:not(.centered) #left {
+    flex: 0 0 auto; width: 100%; max-width: 76vw;
+    flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 1.5vw;
+  }
+  :root.lay-cinema #app:not(.centered) #cover { width: 5.8vw; min-width: 68px; max-width: 108px; flex-shrink: 0; }
+  :root.lay-cinema #app:not(.centered) #left.cover-small #cover { width: 4.5vw; }
+  :root.lay-cinema #app:not(.centered) #info { margin: 0; padding: .4vw .7vw; }
+  :root.lay-cinema #app:not(.centered) #title { font-size: 1.65vw; }
+  :root.lay-cinema #app:not(.centered) #artist { font-size: 1.1vw; }
+  :root.lay-cinema #app:not(.centered) #album { font-size: .9vw; margin-top: .2vh; }
+  :root.lay-cinema #app:not(.centered) #clock { order: 4; margin-left: auto; text-align: right; transform-origin: right center; }
+  :root.lay-cinema #app:not(.centered) #ctime { font-size: calc(2.1vw * var(--clocksize, 1)); }
+  :root.lay-cinema #app:not(.centered) #cdate { font-size: calc(.9vw * var(--clocksize, 1)); }
+  :root.lay-cinema #app:not(.centered) #mctrl { order: 3; margin-top: 0; }
+  :root.lay-cinema #app:not(.centered) #prog { order: 5; flex-basis: 100%; margin-top: .2vh; }
+  :root.lay-cinema #app:not(.centered) #lyrics { flex: 1; width: 100%; height: auto; margin-left: 0; }
+  :root.lay-cinema #app:not(.centered) #track { text-align: center; }
+  :root.lay-cinema #app:not(.centered) .line { margin-left: auto; margin-right: auto; text-align: center; transform-origin: center center; }
+  .line.past { opacity: .18; }
+  /* режимы «Печать» и «Буквы плавно»: строки собираются из букв, будущие строки не видны, пока их не «напишут» */
+  :root.lm-typed .line.future { opacity: 0; }
+  :root.lm-typed .w { display: inline-block; white-space: nowrap; }
+  :root.lm-typed .w.long { white-space: normal; }
+  :root.lm-typed .c { opacity: 0; }
+  :root.lm-typed .c.on { opacity: 1; }
+  :root.lm-letters .c { display: inline-block; transform: translateY(.35em) scale(.85); filter: blur(5px);
+                        transition: opacity .35s ease, transform .5s cubic-bezier(.2, .8, .2, 1), filter .35s ease; }
+  :root.lm-letters .c.on { transform: none; filter: none; }
+  /* режим «Подсветка букв»: виден весь текст, спетые буквы загораются, текущая строка чуть приподнимается */
+  :root.lm-karaoke .line { opacity: .38; filter: blur(var(--lblur, 0px));
+                           transition: opacity .4s ease, transform .4s ease, filter .4s ease, background-color .4s ease; }
+  :root.lm-karaoke .line.past { opacity: .38; }
+  :root.lm-karaoke .line.active { opacity: 1; transform: translateY(-.15em) scale(1.05); filter: none; }
+  :root.lm-karaoke .w { display: inline-block; white-space: nowrap; }
+  :root.lm-karaoke .w.long { white-space: normal; }
+  :root.lm-karaoke .c { display: inline-block; opacity: .4; transition: opacity .25s ease, transform .3s cubic-bezier(.2, .8, .2, 1); }
+  :root.lm-karaoke .c.on { opacity: 1; }
+  :root.lm-karaoke:not(.lm-jump):not(.lm-flat) .c.on { transform: translateY(var(--kup, -.072em)); }   /* «Подсветка букв»: спетые буквы остаются приподнятыми */
+  /* «Прыгающие» (стиль Apple Music): слова/буквы, которые уже играют, плавно поднимаются и остаются чуть выше несыгранных */
+  :root.lm-jump .w { transition: transform .48s cubic-bezier(.22, 1, .36, 1); }
+  :root.lm-jump .c {
+    opacity: .36;
+    transform: translateY(0);
+    transition: opacity .32s ease, transform .48s cubic-bezier(.22, 1, .36, 1), filter .32s ease, color .28s ease;
+  }
+  :root.lm-jump .c.on {
+    opacity: 1;
+    transform: translateY(var(--klift, -.11em));
+  }
+  :root.lm-jump .c.now {
+    opacity: 1;
+    transform: translateY(calc(var(--klift, -.11em) * 1.18));
+    filter: drop-shadow(0 0 .18em rgba(var(--now-glow-rgb, 255,255,255), .45));
+  }
+  /* «Караоке» (без прыжка): побуквенная подсветка как в караоке, без подпрыгивания */
+  :root.lm-flat .line.active { opacity: 1; transform: scale(1.03); filter: none; }
+  :root.lm-flat .c {
+    opacity: .32;
+    transform: none;
+    transition: opacity .24s ease, filter .24s ease, color .24s ease;
+  }
+  :root.lm-flat .c.on {
+    opacity: 1;
+    transform: none;
+  }
+  :root.lm-flat .c.now {
+    opacity: 1;
+    transform: none;
+    filter: drop-shadow(0 0 .16em rgba(var(--now-glow-rgb, 255,255,255), .45));
+  }
+  :root.sc-sung .line.active .c.on, :root.sc-sung .line.active .c.now { color: var(--sung-fg); }
+  :root.sc-now  .line.active .c.now { color: var(--sung-fg); }
+  :root.slw-paused *, :root.slw-paused *::before, :root.slw-paused *::after { animation-play-state: paused !important; }
+  @keyframes cursorblink { 50% { opacity: 0; } }
+  /* курсор стоит на базовой линии букв (чуть заходит под неё, как обычный текстовый курсор) и не сдвигает текст: ширина + отступы = 0 */
+  :root.lm-typing .c.last::after { content: ''; display: inline-block; width: .07em; height: .9em; margin: 0 -.11em 0 .04em; vertical-align: -.1em;
+                                   background: currentColor; animation: cursorblink 1s steps(1) infinite; }
+  .msg { font-size: calc(var(--fontsize) * .7); opacity: .6; font-weight: 600; padding-top: 45vh; }
+  #dbg { position: fixed; right: 12px; bottom: 60px; z-index: 9; display: none; width: 36vw; max-width: 640px; padding: 10px 12px; border-radius: 10px; background: rgba(0,0,0,.78); color: #ddd; font: 12px/1.45 "Segoe UI", Arial, sans-serif; text-shadow: none; pointer-events: none; }
+  #dbg h4 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8aa; margin: 0 0 4px; font-weight: 600; }
+  #dbg .row { display: flex; gap: 8px; } #dbg .k { flex: 0 0 92px; color: #8a9; } #dbg .v { flex: 1; word-break: break-word; }
+  #dbg .sep { height: 1px; background: rgba(255,255,255,.15); margin: 8px 0; }
+  #dbg .ev { display: flex; gap: 8px; } #dbg .t { flex: 0 0 62px; color: #789; font: 11px Consolas, monospace; padding-top: 1px; }
+  #dbg .ok { color: #7ee38f; } #dbg .warn { color: #ffcf6b; } #dbg .err { color: #ff8a8a; }
+  #dim { position: fixed; inset: 0; z-index: 5; background: #000; opacity: 0; pointer-events: none; transition: opacity .5s ease; }
+  #dim.on { opacity: var(--dim, .6); }
+</style>
+</head>
+<body>
+<canvas id="waves"></canvas>
+<canvas id="waves2"></canvas>
+<canvas id="waves3"></canvas>
+<canvas id="blobs"></canvas>
+<div id="grain"></div>
+<div id="bgimg"></div>
+<div id="blurbg"></div>
+<canvas id="mesh"></canvas>
+<canvas id="snow"></canvas>
+<canvas id="stars"></canvas>
+<canvas id="eq"></canvas>
+<div id="dim"></div>
+<div id="dbg"><h4>Сейчас</h4><div id="dbgNow"></div><div class="sep"></div><h4>События (новые сверху)</h4><div id="dbgLog"></div></div>
+<div id="app" class="centered">
+  <div id="left">
+    <div id="clock"><div id="ctime"></div><div id="cdate"></div></div>
+    <img id="cover" alt="">
+    <div id="info">
+      <div id="title">Ничего не играет</div>
+      <div id="artist"></div>
+      <div id="album"></div>
+    </div>
+    <div id="mctrl">
+      <button id="btnPrev" class="mbtn" type="button" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+      <button id="btnPlay" class="mbtn play" type="button" aria-label="Play/Pause"><svg id="icoPlay" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg id="icoPause" viewBox="0 0 24 24" style="display:none"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+      <button id="btnNext" class="mbtn" type="button" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+    </div>
+    <div id="prog"><div id="pbar"><div id="pfill"></div></div><div id="ptime"><span id="pcur">0:00</span><span id="pdur">0:00</span></div></div>
+  </div>
+  <div id="lyrics"><div id="track"></div></div>
+</div>
+
+<div id="vdisc"><div class="vd-rot"><div class="vd-disc"></div><div id="vlabel" class="vd-label"></div></div><div class="vd-gloss"></div></div>
+<canvas id="fuse"></canvas>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var trackEl = $('track'), coverEl = $('cover'), appEl = $('app');
+
+  // название альбома под исполнителем; если его нет — строка скрыта
+  function setAlbum(name) {
+    var el = $('album'); name = (name || '').trim();
+    el.textContent = name;
+    el.style.display = name ? 'block' : 'none';
+  }
+
+  var dev = { shrink: true, cover: 'strict' }, coverMode = '';
+  var theme = { dark: false };
+  var lyricMode = 'classic', typeFill = 0.8, cursorOn = true, progStyle = 'none', progRgb = '255,255,255';
+  var idle = { path: '', url: '', token: 0, shown: false, showCover: true, showText: true };
+
+  // Когда ничего не играет: своя обложка, пустой прямоугольник и надпись «Ничего не играет» можно включать и выключать
+  function idleRefresh() {
+    var l = $('left'), isIdle = !state.title;
+    l.classList.toggle('idle-nocover', isIdle && !idle.url && !idle.showCover);
+    l.classList.toggle('idle-notext', isIdle && !idle.showText);
+    if (isIdle) {
+      if (idle.url) {
+        if (coverEl.getAttribute('src') !== idle.url) coverEl.src = idle.url;
+        coverEl.style.opacity = 1; idle.shown = true;
+      } else {
+        if (coverEl.getAttribute('src')) coverEl.removeAttribute('src');   // пустой прямоугольник вместо обложки прошлого трека
+        coverEl.style.opacity = 1; idle.shown = false;
+      }
+    } else if (idle.shown) {                         // началась музыка: убираем свою картинку, дальше придёт обложка трека
+      idle.shown = false; coverEl.removeAttribute('src'); coverEl.style.opacity = 0;
+    }
+  }
+  function loadIdleImage() {
+    var cands = imgCandidates(idle.path), token = ++idle.token;
+    idle.url = '';
+    if (!cands.length) { idleRefresh(); return; }
+    (function next(i) {
+      if (token !== idle.token) return;
+      if (i >= cands.length) { dbg('🖼 Не удалось загрузить свою обложку (пробовал вариантов пути: ' + cands.length + ')', 'err'); idleRefresh(); return; }
+      var im = new Image();
+      im.onload = function () {
+        if (token !== idle.token) return;
+        idle.url = cands[i]; idleRefresh();
+        if (!state.title) analyzeCover(im);          // фон и цвета подстраиваются под свою обложку
+      };
+      im.onerror = function () { next(i + 1); };
+      im.src = cands[i];
+    })(0);
+  }
+  var sty = { line: 'soft', active: 'glow', sMode: 'auto', sCustom: '0,0,0', asMode: 'same', asCustom: '255,255,255',
+              pMode: 'auto', pCustom: '0,0,0', bMode: 'auto', bCustom: '255,255,255', ibMode: 'same', ibCustom: '255,255,255',
+              iLine: 'same', iSMode: 'same', iSCustom: '0,0,0', iPMode: 'same', iPCustom: '0,0,0',
+              cLine: 'soft', cSMode: 'auto', cSCustom: '0,0,0',
+              lMode: 'auto', lCustom: '255,255,255', alMode: 'same', alCustom: '255,255,255',
+              sgMode: 'same', sgCustom: '30,215,96', sgScope: 'sung',
+              tMode: 'auto', tCustom: '255,255,255', kMode: 'auto', kCustom: '255,255,255',
+              mMode: 'auto', mCustom: '255,255,255', gMode: 'auto', gCustom: '255,255,255' };
+
+  // цвет из настройки Wallpaper Engine ("0.5 0.2 1") -> "128,51,255"
+  function wcolor(v) { return String(v).split(' ').map(function (x) { return Math.round(parseFloat(x) * 255) || 0; }).join(','); }
+  function rgbStr(c) { return Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]); }
+  // обводка/тень строкой для text-shadow: sh — цвет обводки, gl — цвет свечения ("r,g,b")
+  function mkShadow(style, sh, gl) {
+    function c(a) { return 'rgba(' + sh + ',' + a + ')'; }
+    function ring(r, n, a) {
+      var o = [], i, t;
+      for (i = 0; i < n; i++) { t = i / n * 2 * Math.PI; o.push((r * Math.cos(t)).toFixed(2) + 'px ' + (r * Math.sin(t)).toFixed(2) + 'px 0 ' + c(a)); }
+      return o.join(', ');
+    }
+    function g(a) { return 'rgba(' + gl + ',' + a + ')'; }
+    switch (style) {
+      case 'soft':    return '0 0 2px ' + c(.35) + ', 0 2px 12px ' + c(.35) + ', 0 6px 32px ' + c(.28);
+      case 'crisp':   return '0 1px 2px ' + c(.6) + ', 0 3px 8px ' + c(.4);
+      case 'outline': return ring(2, 16, .95);
+      case 'thick':   return ring(3.5, 28, .95) + ', 0 4px 14px ' + c(.35);
+      case 'glow':    return '0 0 6px ' + g(.6) + ', 0 0 20px ' + g(.5) + ', 0 0 44px ' + g(.35);
+      case 'long':    var l = [], i; for (i = 1; i <= 7; i++) l.push(i + 'px ' + i + 'px ' + c((0.6 - 0.05 * i).toFixed(2))); return l.join(', ');
+      default:        return 'none';
+    }
+  }
+  var _sungRgbCache = '255,255,255';
+  function pickRgb(mode, custom, kind, fallback) {
+    if (mode === 'custom') return custom;
+    if (mode === 'sung') return _sungRgbCache;
+    if (mode === 'cover2') return rgbStr(eq.c2);
+    if (mode === 'cover') return rgbStr(kind === 'plate' ? eq.c2 : eq.c1);   // обводка — 1-й главный цвет обложки, подсветка — 2-й
+    return fallback;
+  }
+  function applyStyle() {
+    var rs = document.documentElement.style, cl = document.documentElement.classList, dark = theme.dark;
+    var auto = dark ? '255,255,255' : '0,0,0', fg = dark ? '17,17,17' : '255,255,255';
+    var lyFg = pickRgb(sty.lMode, sty.lCustom, 'stroke', fg);     // цвет текста песни
+    var alFg = sty.alMode === 'same' ? lyFg : pickRgb(sty.alMode, sty.alCustom, 'stroke', fg);   // цвет текущей строки
+    var sgRgb = sty.sgMode === 'same' ? alFg : pickRgb(sty.sgMode, sty.sgCustom, 'stroke', fg);  // цвет играющих/спетых букв
+    _sungRgbCache = sgRgb;
+    var inFg = pickRgb(sty.tMode, sty.tCustom, 'stroke', fg);     // название, исполнитель, альбом
+    var ckFg = pickRgb(sty.kMode, sty.kCustom, 'stroke', fg);     // время
+    var ctFg = pickRgb(sty.mMode, sty.mCustom, 'stroke', fg);     // кнопки управления треком
+    var pgRgb = pickRgb(sty.gMode, sty.gCustom, 'stroke', inFg); progRgb = pgRgb;   // прогресс-бар и фитиль
+    var sRgb = pickRgb(sty.sMode, sty.sCustom, 'stroke', auto), gRgb = pickRgb(sty.sMode, sty.sCustom, 'stroke', lyFg);
+    var aS = sRgb, aG = sty.sMode === 'auto' ? alFg : gRgb;       // независимая обводка/свечение текущей строки
+    if (sty.asMode !== 'same') {
+      aS = pickRgb(sty.asMode, sty.asCustom, 'stroke', auto);
+      aG = pickRgb(sty.asMode, sty.asCustom, 'stroke', alFg);
+    }
+    var pRgb = pickRgb(sty.pMode, sty.pCustom, 'plate', auto);
+    var iS = sRgb, iG = sty.sMode === 'auto' ? inFg : gRgb;       // свечение в режиме «Авто» — цветом самого текста
+    if (sty.iSMode !== 'same') { iS = pickRgb(sty.iSMode, sty.iSCustom, 'stroke', auto); iG = pickRgb(sty.iSMode, sty.iSCustom, 'stroke', inFg); }
+    var cS = sRgb, cG = sty.sMode === 'auto' ? ckFg : gRgb;       // независимая обводка времени
+    if (sty.cSMode !== 'same') { cS = pickRgb(sty.cSMode, sty.cSCustom, 'stroke', auto); cG = pickRgb(sty.cSMode, sty.cSCustom, 'stroke', ckFg); }
+    var iPm = sty.iPMode === 'same' ? sty.pMode : sty.iPMode;
+    var iP = sty.iPMode === 'same' ? pRgb : pickRgb(sty.iPMode, sty.iPCustom, 'plate', auto);
+    rs.setProperty('--fg-rgb', fg);
+    rs.setProperty('--lyric-fg', 'rgb(' + lyFg + ')');
+    rs.setProperty('--active-lyric-fg', 'rgb(' + alFg + ')');
+    rs.setProperty('--info-fg', 'rgb(' + inFg + ')');
+    rs.setProperty('--clock-fg', 'rgb(' + ckFg + ')');
+    rs.setProperty('--ctrl-fg', 'rgb(' + ctFg + ')');
+    rs.setProperty('--prog-rgb', pgRgb);
+    rs.setProperty('--tshadow', mkShadow(sty.line, sRgb, gRgb));
+    rs.setProperty('--ashadow', mkShadow(sty.active === 'same' ? sty.line : sty.active, aS, aG));
+    rs.setProperty('--ishadow', mkShadow(sty.iLine === 'same' ? sty.line : sty.iLine, iS, iG));
+    rs.setProperty('--cshadow', mkShadow(sty.cLine === 'same' ? sty.line : sty.cLine, cS, cG));
+    rs.setProperty('--now-glow-rgb', sty.sgMode !== 'same' ? sgRgb : aG);
+    var barRgb = sty.bMode === 'auto' ? (sty.pMode === 'auto' ? alFg : pRgb) : pickRgb(sty.bMode, sty.bCustom, 'stroke', alFg);
+    var iBarRgb = sty.ibMode === 'same' ? barRgb : (sty.ibMode === 'auto' ? (iPm === 'auto' ? inFg : iP) : pickRgb(sty.ibMode, sty.ibCustom, 'stroke', inFg));
+    rs.setProperty('--plate-rgb', pRgb);
+    rs.setProperty('--bar-rgb', barRgb);
+    rs.setProperty('--iplate-rgb', iP);
+    rs.setProperty('--ibar-rgb', iBarRgb);
+    if (sty.sgMode !== 'same') {
+      rs.setProperty('--sung-fg', 'rgb(' + sgRgb + ')');
+      cl.toggle('sc-sung', sty.sgScope !== 'now');
+      cl.toggle('sc-now', sty.sgScope === 'now');
+    } else {
+      cl.remove('sc-sung'); cl.remove('sc-now');
+    }
+  }
+  var state = {
+    title: '', artist: '', album: '',
+    duration: 0,
+    basePos: 0, baseTime: performance.now(),
+    playing: false,
+    lyrics: [], lineEls: [], activeIdx: -2,
+    offset: 1, lastPos: 0,
+    fetchToken: 0, coverToken: 0, thumbAt: 0, timelineAt: 0, lastThumb: '', hdShown: false, thumbImg: null, thumbLogo: false, coverInfo: '', msgKey: '', changeAt: 0,
+    hdDone: false, lyricsState: 'none',   // none | unknown | found
+    meta: { title: '', artist: '' }, cand: [], lyricId: null,
+    bgMode: 'waves',
+    avg: [34, 34, 34], avgLum: 0.1,
+    palette: [{ c: [18, 18, 28], w: 0.5 }, { c: [70, 70, 110], w: 0.5 }],
+    wavePalette: [{ c: [18, 18, 28], w: 0.5 }, { c: [70, 70, 110], w: 0.5 }],
+    wavePalMode: 'v2',
+    paletteLum: 0.2
+  };
+
+  /* ================= Настройки Wallpaper Engine ================= */
+  window.wallpaperPropertyListener = {
+    applyUserProperties: function (p) {
+      if (p.offset)    state.offset = p.offset.value;   // секунды, можно дробные (0.35, 1.3, 5.02)
+      if (p.fontsize) {
+        document.documentElement.style.setProperty('--fontsize', p.fontsize.value + 'px');
+        state.activeIdx = -2;
+      }
+      if (p.wavespeed) wave.speed = p.wavespeed.value / 100;
+      if (p.wavescale) wave.scale = p.wavescale.value / 100;
+      var stChg = false;
+      if (p.textshadow)      { sty.line = p.textshadow.value; stChg = true; }
+      if (p.activeshadow)    { sty.active = p.activeshadow.value; stChg = true; }
+      if (p.strokecmode)       { sty.sMode = p.strokecmode.value; stChg = true; }
+      if (p.strokecolor)       { sty.sCustom = wcolor(p.strokecolor.value); stChg = true; }
+      if (p.activestrokecmode) { sty.asMode = p.activestrokecmode.value; stChg = true; }
+      if (p.activestrokecolor) { sty.asCustom = wcolor(p.activestrokecolor.value); stChg = true; }
+      if (p.platecmode)      { sty.pMode = p.platecmode.value; stChg = true; }
+      if (p.platecolor)      { sty.pCustom = wcolor(p.platecolor.value); stChg = true; }
+      if (p.barcmode)        { sty.bMode = p.barcmode.value; stChg = true; }
+      if (p.barcolor)        { sty.bCustom = wcolor(p.barcolor.value); stChg = true; }
+      if (p.infoshadow)      { sty.iLine = p.infoshadow.value; stChg = true; }
+      if (p.infostrokecmode) { sty.iSMode = p.infostrokecmode.value; stChg = true; }
+      if (p.infostrokecolor) { sty.iSCustom = wcolor(p.infostrokecolor.value); stChg = true; }
+      if (p.infoplatecmode)  { sty.iPMode = p.infoplatecmode.value; stChg = true; }
+      if (p.infoplatecolor)  { sty.iPCustom = wcolor(p.infoplatecolor.value); stChg = true; }
+      if (p.infobarcmode)    { sty.ibMode = p.infobarcmode.value; stChg = true; }
+      if (p.infobarcolor)    { sty.ibCustom = wcolor(p.infobarcolor.value); stChg = true; }
+      if (p.lyriccmode)       { sty.lMode = p.lyriccmode.value; stChg = true; }
+      if (p.lyriccolor)       { sty.lCustom = wcolor(p.lyriccolor.value); stChg = true; }
+      if (p.activelyriccmode) { sty.alMode = p.activelyriccmode.value; stChg = true; }
+      if (p.activelyriccolor) { sty.alCustom = wcolor(p.activelyriccolor.value); stChg = true; }
+      if (p.sungcmode)        { sty.sgMode = p.sungcmode.value; stChg = true; }
+      if (p.sungcolor)        { sty.sgCustom = wcolor(p.sungcolor.value); stChg = true; }
+      if (p.sungscope)        { sty.sgScope = p.sungscope.value; stChg = true; }
+      if (p.infotextcmode)    { sty.tMode = p.infotextcmode.value; stChg = true; }
+      if (p.infotextcolor)    { sty.tCustom = wcolor(p.infotextcolor.value); stChg = true; }
+      if (p.clockcmode)       { sty.kMode = p.clockcmode.value; stChg = true; }
+      if (p.clockcolor)       { sty.kCustom = wcolor(p.clockcolor.value); stChg = true; }
+      if (p.clockshadow)      { sty.cLine = p.clockshadow.value; stChg = true; }
+      if (p.clockstrokecmode) { sty.cSMode = p.clockstrokecmode.value; stChg = true; }
+      if (p.clockstrokecolor) { sty.cSCustom = wcolor(p.clockstrokecolor.value); stChg = true; }
+      if (p.ctrlcmode)        { sty.mMode = p.ctrlcmode.value; stChg = true; }
+      if (p.ctrlcolor)        { sty.mCustom = wcolor(p.ctrlcolor.value); stChg = true; }
+      if (p.progcmode)        { sty.gMode = p.progcmode.value; stChg = true; }
+      if (p.progcolor)        { sty.gCustom = wcolor(p.progcolor.value); stChg = true; }
+      if (p.infoplate) {
+        var icl = $('info').classList;
+        ['plate', 'glass', 'liquid', 'bar', 'neon', 'underline', 'gradient', 'halo', 'brackets'].forEach(function (n) { icl.remove('ip-' + n); });
+        if (p.infoplate.value !== 'none') icl.add('ip-' + p.infoplate.value);
+      }
+      if (p.infoplateamount) document.documentElement.style.setProperty('--iplate-a', p.infoplateamount.value / 100);
+      if (stChg) applyStyle();
+      if (p.activeplate) {
+        var cl = document.documentElement.classList;
+        ['none', 'plate', 'glass', 'liquid', 'bar', 'neon', 'underline', 'gradient', 'halo', 'brackets'].forEach(function (n) { cl.remove('ap-' + n); });
+        cl.add('ap-' + p.activeplate.value);
+      }
+      if (p.layoutmode) {
+        var lcl = document.documentElement.classList;
+        ['classic', 'mirror', 'cinema'].forEach(function (n) { lcl.remove('lay-' + n); });
+        lcl.add('lay-' + p.layoutmode.value);
+        state.activeIdx = -2;
+      }
+      if (p.plateamount) document.documentElement.style.setProperty('--plate-a', p.plateamount.value / 100);
+      if (p.dimamount) document.documentElement.style.setProperty('--dim', p.dimamount.value / 100);
+      if (p.wavechaos) wave.chaos = p.wavechaos.value / 100;
+      if (p.wavezoom)  wave.zoom  = p.wavezoom.value / 100;
+      if (p.waveangle) wave.angle = p.waveangle.value * Math.PI / 180;
+      if (p.waveblur)  { var px = p.waveblur.value * 0.4; $('waves').style.filter = px > 0 ? 'blur(' + px + 'px)' : 'none'; }
+      if (p.w2speed) w2.speed = p.w2speed.value / 100;
+      if (p.w2lines) w2.scale = p.w2lines.value / 100;
+      if (p.w2chaos) w2.chaos = p.w2chaos.value / 100;
+      if (p.w2zoom)  w2.zoom  = p.w2zoom.value / 100;
+      if (p.w2angle) w2.angle = p.w2angle.value * Math.PI / 180;
+      if (p.w2blur)  { var w2px = p.w2blur.value * 0.4; $('waves2').style.filter = w2px > 0 ? 'blur(' + w2px + 'px)' : 'none'; }
+      if (p.w2dom)   { w2.dom = p.w2dom.value / 100; w2SetPalette(state.wavePalMode === 'v1' ? state.palette : (state.wavePalette || state.palette)); }
+      if (p.wavepalmode) { state.wavePalMode = p.wavepalmode.value; pushPalette(state.palette); }
+      if (p.w3speed)    w3.speed    = p.w3speed.value / 100;
+      if (p.w3scale)    w3.scale    = p.w3scale.value / 100 * 3.2;
+      if (p.w3strength) w3.strength = p.w3strength.value / 100 * 0.65;
+      if (p.w3angle)    w3.angle    = p.w3angle.value * Math.PI / 180;
+      if (p.w3blur)     { var w3px = p.w3blur.value * 0.45; $('waves3').style.filter = w3px > 0 ? 'blur(' + w3px + 'px)' : 'none'; }
+      if (p.w3bright)   { w3.bright = p.w3bright.value / 100; applyTheme(); }
+      if (p.mediacontrols !== undefined) { $('mctrl').classList.toggle('hidden', !p.mediacontrols.value); }
+      if (p.ctrlstyle) {
+        var mcl = $('mctrl').classList;
+        ['circles', 'minimal', 'pill', 'outline', 'squircle', 'diamond', 'dock', 'underline', 'hex', 'compact'].forEach(function (n) { mcl.remove('cs-' + n); });
+        mcl.add('cs-' + p.ctrlstyle.value);
+      }
+      if (p.blobspeed) blobs.speed = p.blobspeed.value / 100;
+      if (p.blobsize)  blobs.size = p.blobsize.value / 100;
+      if (p.blobgrain) $('grain').style.opacity = p.blobgrain.value / 100;
+      if (p.blobblur)  { var bpx = p.blobblur.value * 0.8; $('blobs').style.filter = bpx > 0 ? 'blur(' + bpx + 'px)' : 'none'; }
+      if (p.clockshow    !== undefined) { clock.show    = !!p.clockshow.value;    updateClock(true); }
+      if (p.clockseconds !== undefined) { clock.seconds = !!p.clockseconds.value; updateClock(true); }
+      if (p.clockdate    !== undefined) { clock.date    = !!p.clockdate.value;    updateClock(true); }
+      if (p.clockweekday !== undefined) { clock.weekday = !!p.clockweekday.value; updateClock(true); }
+      if (p.clockformat) { clock.fmt = p.clockformat.value; updateClock(true); }
+      if (p.clocksize)   document.documentElement.style.setProperty('--clocksize', p.clocksize.value / 100);
+      if (p.customimage) bgimg.path = p.customimage.value || '';
+      if (p.imgfit)    bgimg.fit = p.imgfit.value;
+      if (p.imgblur)   bgimg.blur = p.imgblur.value * 0.4;
+      if (p.imgbright) bgimg.bright = p.imgbright.value / 100;
+      if (p.imgsat)    bgimg.sat = p.imgsat.value / 100;
+      if (p.customimage || p.imgfit || p.imgblur || p.imgbright || p.imgsat) applyBgImage();
+      if (p.starspeed) stars.speed = p.starspeed.value / 100;
+      if (p.starcount) stars.n = p.starcount.value;
+      if (p.starreact) stars.react = p.starreact.value / 100;
+      if (p.starsize)  stars.size = p.starsize.value / 100;
+      if (p.starcolor) stars.cmode = p.starcolor.value;
+      for (var pk in p) {                           // у каждого стиля эквалайзера свои настройки: eq_<стиль>_<параметр>
+        var mm = /^eq_([a-z]+)_([a-z0-9]+)$/.exec(pk), cf = mm && eq.cfg[mm[1]];
+        if (!cf) continue;
+        var pv = p[pk].value, pn = mm[2];
+        if (pn === 'cmode') cf.cmode = pv;
+        else if (pn === 'color') cf.custom = String(pv).split(' ').map(function (v) { return Math.round(parseFloat(v) * 255); }).join(',');
+        else cf[pn] = pv / 100;
+      }
+      if (p.eqstyle)   { eq.style = p.eqstyle.value; $('eq').style.display = eq.style === 'none' ? 'none' : 'block'; }
+      if (p.shrinkcover !== undefined) dev.shrink = !!p.shrinkcover.value;
+      if (p.shrinksize) document.documentElement.style.setProperty('--shrink', p.shrinksize.value + '%');
+      if (p.covermode) dev.cover = p.covermode.value;
+      var rsx = document.documentElement.style;
+      if (p.blurpx)     { blur.px = p.blurpx.value; applyBlurBg(); }
+      if (p.blurzoom)   rsx.setProperty('--bzoom', p.blurzoom.value / 100);
+      if (p.blurbright) { blur.bright = p.blurbright.value / 100; applyBlurBg(); applyTheme(); }
+      if (p.blurbreathe) rsx.setProperty('--bamp', (p.blurbreathe.value / 100 * 0.25).toFixed(3));
+      if (p.blurspeed)  { var bsp = p.blurspeed.value / 100; $('blurbg').style.animationDuration = (bsp > 0 ? 16 / bsp : 1e6) + 's'; }
+      if (p.meshspeed)  mesh.speed = p.meshspeed.value / 100;
+      if (p.meshsize)   mesh.size = p.meshsize.value / 100;
+      if (p.meshblur)   { mesh.blur = p.meshblur.value * 0.6; applyMeshFx(); }
+      if (p.meshsat)    { mesh.sat = p.meshsat.value / 100; applyMeshFx(); }
+      if (p.snowcount)  snow.n = p.snowcount.value;
+      if (p.snowspeed)  snow.speed = p.snowspeed.value / 100;
+      if (p.snowsize)   snow.size = p.snowsize.value / 100;
+      if (p.snowwind)   snow.wind = p.snowwind.value / 100;
+      if (p.coverstyle) { cov.shape = p.coverstyle.value; applyShape(); }
+      if (p.coverradius) { cov.r = p.coverradius.value; applyShape(); }
+      if (p.vinylspeed) rsx.setProperty('--vspin', (60 / p.vinylspeed.value).toFixed(2) + 's');
+      if (p.progstyle)  {
+        progStyle = p.progstyle.value;
+        var pcl = $('prog').classList;
+        ['line', 'thick', 'seg', 'fuse'].forEach(function (n) { pcl.remove('ps-' + n); });
+        if (progStyle !== 'none') pcl.add('ps-' + progStyle);
+      }
+      if (p.progtime !== undefined) $('prog').classList.toggle('notime', !p.progtime.value);
+      if (p.progw)  rsx.setProperty('--prog-w', p.progw.value + '%');
+      if (p.progx)  rsx.setProperty('--prog-x', p.progx.value + 'vw');
+      if (p.progy)  rsx.setProperty('--prog-y', p.progy.value + 'vh');
+      if (p.fusew)  fuse.w = p.fusew.value;
+      if (p.fusefx !== undefined) { fuse.fx = !!p.fusefx.value; if (!fuse.fx) fuse.sp.length = 0; }
+      if (p.lyricup)   rsx.setProperty('--kup', (-0.12 * p.lyricup.value / 100).toFixed(3) + 'em');
+      if (p.lyriclift) rsx.setProperty('--klift', (-0.11 * p.lyriclift.value / 100).toFixed(3) + 'em');
+      if (p.lyricblur) rsx.setProperty('--lblur', (p.lyricblur.value * 0.1).toFixed(1) + 'px');
+      if (p.typefill) typeFill = p.typefill.value / 100;
+      if (p.typecursor !== undefined) { cursorOn = !!p.typecursor.value; state.revIdx = -99; }
+      if (p.lyricmode) { lyricMode = p.lyricmode.value === 'karaoke' ? 'karaoke_flat' : p.lyricmode.value; applyLyricMode(); }
+      if (p.idlecover) { idle.path = p.idlecover.value || ''; loadIdleImage(); }
+      if (p.idleshowcover !== undefined) { idle.showCover = !!p.idleshowcover.value; idleRefresh(); }
+      if (p.idleshowtext !== undefined) { idle.showText = !!p.idleshowtext.value; idleRefresh(); }
+      if (p.infox)  document.documentElement.style.setProperty('--info-x', p.infox.value + 'vw');
+      if (p.infoy)  document.documentElement.style.setProperty('--info-y', p.infoy.value + 'vh');
+      if (p.clockx) document.documentElement.style.setProperty('--clock-x', p.clockx.value + 'vw');
+      if (p.clocky) document.documentElement.style.setProperty('--clock-y', p.clocky.value + 'vh');
+      if (p.ctrlx)  document.documentElement.style.setProperty('--ctrl-x', p.ctrlx.value + 'vw');
+      if (p.ctrly)  document.documentElement.style.setProperty('--ctrl-y', p.ctrly.value + 'vh');
+      if (p.debug !== undefined) $('dbg').style.display = p.debug.value ? 'block' : 'none';
+      if (p.uilang) { ui.pref = p.uilang.value; applyLang(); }
+      if (p.bgmode)    { state.bgMode = p.bgmode.value; applyTheme(); }
+    }
+  };
+
+  /* ================= Язык надписей на обоях ================= */
+  var I18N = {
+    ru: { nothing: 'Ничего не играет', searching: 'Ищу текст…', notfound: 'Синхронный текст не найден', neterr: 'Не удалось загрузить текст' },
+    en: { nothing: 'Nothing is playing', searching: 'Searching for lyrics…', notfound: 'No synced lyrics found', neterr: 'Couldn\u2019t load lyrics' },
+    zh: { nothing: '没有正在播放的内容', searching: '正在查找歌词…', notfound: '未找到同步歌词', neterr: '无法加载歌词' },
+    ja: { nothing: '再生中の曲はありません', searching: '歌詞を検索中…', notfound: '同期歌詞が見つかりません', neterr: '歌詞を読み込めませんでした' },
+    ko: { nothing: '재생 중인 곡이 없습니다', searching: '가사를 찾는 중…', notfound: '동기화된 가사를 찾을 수 없습니다', neterr: '가사를 불러오지 못했습니다' }
+  };
+  var WORLD_LOC = { ru: 'ru-RU', en: 'en-GB', zh: 'zh-CN', ja: 'ja-JP', ko: 'ko-KR' };
+  var ui = { pref: 'auto', cur: 'ru' };
+  function detectLang() {
+    var n = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase().slice(0, 2);
+    return I18N[n] ? n : 'en';
+  }
+  function T(key) { return (I18N[ui.cur] || I18N.en)[key] || ''; }
+  function applyLang() {
+    ui.cur = (ui.pref !== 'auto' && I18N[ui.pref]) ? ui.pref : detectLang();
+    document.documentElement.lang = ui.cur;
+    if (!state.title) $('title').textContent = T('nothing');
+    if (state.msgKey && state.lyricsState !== 'found') setMessage(state.msgKey);
+    clock.last = ''; updateClock(true);
+  }
+
+  /* ================= Местное время ================= */
+  var clock = { show: true, seconds: true, date: true, weekday: true, fmt: 'world', last: '' };
+
+  function updateClock(force) {
+    var box = $('clock');
+    box.style.display = clock.show ? 'block' : 'none';
+    if (!clock.show) return;
+    var d = new Date(), us = clock.fmt === 'us';
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    var h = d.getHours(), suffix = '';
+    if (us) { suffix = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; } else h = pad(h);
+    var t = h + ':' + pad(d.getMinutes()) + (clock.seconds ? ':' + pad(d.getSeconds()) : '');
+    var loc = us ? 'en-US' : (WORLD_LOC[ui.cur] || 'en-GB'), parts = [];
+    if (clock.weekday) parts.push(d.toLocaleDateString(loc, { weekday: 'long' }));
+    if (clock.date) parts.push(d.toLocaleDateString(loc, { day: 'numeric', month: 'long', year: 'numeric' }).replace(/\s*г\.$/, ''));
+    var ds = parts.join(', ');
+    var key = t + suffix + '|' + ds;
+    if (!force && key === clock.last) return;
+    clock.last = key;
+    var te = $('ctime');
+    te.textContent = t;
+    if (suffix) { var sp = document.createElement('span'); sp.className = 'ampm'; sp.textContent = suffix; te.appendChild(sp); }
+    $('cdate').textContent = ds;
+    $('cdate').style.display = ds ? 'block' : 'none';
+  }
+
+  /* ================= Отладка: что реально приходит от Windows/Wallpaper Engine ================= */
+  var dbgLines = [];
+  function fmt(sec) { sec = Math.max(0, Math.round(sec || 0)); return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2); }
+  function esc(x) { return String(x).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function dbg(msg, kind) {                         // kind: 'ok' | 'warn' | 'err' | не задан
+    var d = new Date(), t = d.toTimeString().slice(0, 8);
+    dbgLines.unshift({ t: t, msg: msg, kind: kind || '' });
+    if (dbgLines.length > 12) dbgLines.pop();
+    dbgRender();
+  }
+  function dbgRender() {
+    if ($('dbg').style.display !== 'block') return;
+    var pos = state.title ? Math.min(state.duration || 1e9, Math.max(0, currentPos() - state.offset)) : 0;
+    var lyr = state.lyricsState === 'found' ? 'найден, ' + state.lyrics.length + ' строк' : (state.lyricsState === 'unknown' ? 'ищу…' : 'не найден');
+    function row(k, v) { return '<div class="row"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
+    $('dbgNow').innerHTML =
+      row('Трек', state.title ? esc(state.meta.title || state.title) + ' — ' + esc(state.meta.artist || state.artist) : 'ничего не играет') +
+      row('Альбом', esc(state.album || '—')) +
+      row('Состояние', (state.playing ? '▶ играет' : '⏸ пауза / стоп') + (state.title ? ' · ' + fmt(pos) + ' из ' + (state.duration ? fmt(state.duration) : '?') : '')) +
+      row('Текст', lyr) +
+      row('Обложка', esc(state.coverInfo || '—')) +
+      row('Сдвиг текста', (state.offset >= 0 ? '+' : '') + state.offset.toFixed(2) + ' с');
+    $('dbgLog').innerHTML = dbgLines.map(function (l) {
+      return '<div class="ev"><div class="t">' + l.t + '</div><div class="v ' + l.kind + '">' + esc(l.msg) + '</div></div>';
+    }).join('');
+  }
+  setInterval(dbgRender, 500);
+
+  /* ================= Утилиты ================= */
+  function norm(s) {
+    return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  }
+  function enc(s) { return encodeURIComponent(s); }
+
+  var jid = 0;
+  function jsonp(url) {
+    return new Promise(function (resolve, reject) {
+      var cb = '__jp' + (++jid), s = document.createElement('script');
+      var timer = setTimeout(function () { cleanup(); reject(new Error('timeout')); }, 6000);
+      function cleanup() { clearTimeout(timer); delete window[cb]; if (s.parentNode) s.parentNode.removeChild(s); }
+      window[cb] = function (data) { cleanup(); resolve(data); };
+      s.onerror = function () { cleanup(); reject(new Error('jsonp')); };
+      s.src = url + '&callback=' + cb;
+      document.head.appendChild(s);
+    });
+  }
+  function getJSON(url, allowJsonp) {
+    return fetch(url).then(function (r) { return r.json(); }).catch(function (err) {
+      if (allowJsonp) return jsonp(url);
+      throw err;
+    });
+  }
+  function loadImg(url, cors) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      if (cors) img.crossOrigin = 'anonymous';
+      img.onload = function () { resolve({ img: img, cors: cors }); };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  // убрать "- Topic", хвосты вроде (Official Video) и префикс "Исполнитель - " из названия
+  function cleanMeta(title, artist) {
+    var a = (artist || '').replace(/\s*-\s*Topic\s*$/i, '').replace(/\s*VEVO\s*$/i, '').trim();
+    var t = (title || '').trim();
+    var pre = (a + ' - ').toLowerCase();
+    if (a && t.toLowerCase().indexOf(pre) === 0) t = t.slice(pre.length);
+    t = t.replace(/\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|remaster(ed)?|visuali[sz]er|hd|hq|4k|mv)\b[^\)\]]*[\)\]]/ig, '')
+         .replace(/\s*[\(\[]\s*(feat|ft)\.?[^\)\]]*[\)\]]/ig, '').trim();
+    return { title: t || title || '', artist: a };
+  }
+
+  /* ================= Смена трека: затемнение ================= */
+  var dimEl = $('dim');
+  var change = { active: false, thumbOk: false, lyricsOk: false, timer: null };
+
+  function beginChange() {
+    change.active = true;
+    change.lyricsOk = false;
+    change.thumbOk = (performance.now() - state.thumbAt) < 1200;   // обложка могла прийти раньше названия
+    dimEl.classList.add('on');
+    clearTimeout(change.timer);
+    change.timer = setTimeout(endChange, 3000);                    // не держим затемнение дольше 3 с
+  }
+  function endChange() {
+    change.active = false;
+    clearTimeout(change.timer);
+    dimEl.classList.remove('on');
+    if (!change.thumbOk && !state.hdShown) coverEl.style.opacity = 0;   // лучше без обложки, чем с чужой
+  }
+  function checkChangeDone() {
+    if (change.active && change.lyricsOk && change.thumbOk) endChange();
+  }
+
+  /* ================= Медиа-интеграция ================= */
+  var fetchTimer = null;
+
+  window.wallpaperRegisterMediaPropertiesListener(function (e) {
+    var title = e.title || '', artist = e.artist || '';
+    if (!title) {                                   // ничего не играет
+      if (state.title) dbg('⏹ Трек пропал: ничего не играет', 'warn');
+      state.title = state.artist = '';
+      state.meta = { title: '', artist: '' };
+      $('title').textContent = T('nothing');
+      $('artist').textContent = '';
+      setAlbum('');
+      state.fetchToken++; state.coverToken++;
+      setMessage('');
+      endChange();
+      idleRefresh();
+      return;
+    }
+    var changed = (title !== state.title) || (artist !== state.artist);
+    state.title = title; state.artist = artist; state.album = e.albumTitle || '';
+    setAlbum(state.album);
+    idleRefresh();
+    if (!changed) return;
+    dbg('🎵 Новый трек: «' + title + '» — ' + (artist || 'исполнитель не указан') + (state.album ? ' · альбом «' + state.album + '»' : ''), 'ok');
+
+    state.changeAt = performance.now();
+    state.meta = cleanMeta(title, artist);
+    $('title').textContent  = state.meta.title;
+    $('artist').textContent = state.meta.artist;
+
+    beginChange();
+    state.cand = []; state.lyricId = null; state.hdShown = false; state.hdDone = false; state.hdFree = false;
+    // миниатюра нового трека могла прийти раньше названия: показываем её сразу, а не обложку прошлого трека
+    if (state.thumbAt > state.changeAt - 1200 && state.thumbImg && !state.thumbLogo && state.lastThumb) {
+      coverEl.src = state.lastThumb; coverEl.style.opacity = 1; state.coverInfo = 'миниатюра Windows (ищу HD…)';
+    } else state.coverInfo = 'ищу…';
+    setMessage('searching');
+    // если позиция от старого трека ещё не обновилась — начинаем с нуля
+    if (performance.now() - state.timelineAt > 800) {
+      state.basePos = 0; state.baseTime = performance.now(); state.duration = 0;
+    }
+    clearTimeout(fetchTimer);
+    fetchTimer = setTimeout(function () { loadLyrics(); loadHDCover(); }, 500);
+  });
+
+  window.wallpaperRegisterMediaTimelineListener(function (e) {
+    var pred = currentPos() - state.offset, np = e.position || 0;
+    if (state.title && state.duration && Math.abs(np - pred) > 1.5) {
+      dbg((np < pred ? '⏪ Позиция откатилась назад (перемотка или запоздавшие данные): ' : '⏩ Позиция скакнула вперёд (перемотка): ') + 'ожидали ' + fmt(pred) + ', пришло ' + fmt(np), 'warn');
+    }
+    if (e.duration && Math.abs(e.duration - state.duration) > 0.5) dbg('⏱ Длительность трека от Windows: ' + fmt(e.duration), '');
+    var nowT = performance.now();
+    if (state.playing && state.title && Math.abs(np - pred) < 0.8 && nowT - state.baseTime < 5000) {
+      // позиция от Windows приходит неровно (с округлением и задержкой) — мелкие расхождения сглаживаем,
+      // иначе текст «дёргается» и может откатиться на строку назад. Настоящая перемотка (>0.8 с) применяется сразу.
+      state.basePos = pred + (np - pred) * 0.25;
+    } else state.basePos = np;
+    state.baseTime = nowT;
+    state.timelineAt = state.baseTime;
+    var nd = e.duration || 0;
+    var durChanged = nd && Math.abs(nd - state.duration) > 0.5;
+    state.duration = nd || state.duration;
+    if (durChanged && state.cand.length) pickLyrics();   // длительность уточнилась — выбрать подходящую версию текста
+  });
+
+  window.wallpaperRegisterMediaPlaybackListener(function (e) {
+    var PLAYING = (window.wallpaperMediaIntegration && window.wallpaperMediaIntegration.PLAYBACK_PLAYING);
+    if (PLAYING === undefined) PLAYING = 1;
+    state.basePos  = currentPos() - state.offset;
+    state.baseTime = performance.now();
+    var was = state.playing;
+    state.playing  = (e.state === PLAYING);
+    if (was !== state.playing) dbg(state.playing ? '▶ Играет' : '⏸ Пауза или остановка', '');
+  });
+
+  window.wallpaperRegisterMediaThumbnailListener(function (e) {
+    state.thumbAt = performance.now();
+    if (!e.thumbnail) {
+      state.thumbImg = null;
+      if (!state.hdShown) coverEl.style.opacity = 0;
+      change.thumbOk = true; checkChangeDone();
+      return;
+    }
+    var th = e.thumbnail;
+    if (th === state.lastThumb) {                   // та же миниатюра — палитру не пересчитываем
+      if (state.thumbLogo) { state.thumbImg = null; if (!state.hdShown) coverEl.style.opacity = 0; }
+      else if (!state.hdShown) coverEl.style.opacity = 1;
+      change.thumbOk = true; checkChangeDone();
+      return;
+    }
+    var img = new Image();
+    img.onload = function () {
+      state.lastThumb = th;
+      state.thumbAt = performance.now();
+      if (isLogoThumb(img)) {                       // Spotify иногда отдаёт вместо обложки свой логотип — это не обложка
+        state.thumbLogo = true; state.thumbImg = null;
+        state.coverInfo = 'логотип Spotify скрыт, ищу HD…';
+        dbg('🖼 Windows прислал логотип Spotify вместо обложки — игнорирую', 'warn');
+        if (!state.hdShown) coverEl.style.opacity = 0;
+        change.thumbOk = true; checkChangeDone();
+        return;
+      }
+      // у Spotify бывает «открытка»: обложка с прозрачными полями и логотипом внизу — оставляем только саму обложку
+      var crop = cropBranded(img), useImg = crop || img, shown = th;
+      state.branded = !!crop;
+      if (crop) { shown = crop.toDataURL('image/jpeg', 0.92); dbg('🖼 На миниатюре Windows есть логотип и поля — обрезаю до самой обложки', 'warn'); }
+      var tw = useImg.naturalWidth || useImg.width, thh = useImg.naturalHeight || useImg.height;
+      state.thumbLogo = false; state.thumbImg = useImg;
+      if (!state.hdShown) state.coverInfo = 'миниатюра Windows ' + tw + '×' + thh + (crop ? ' (обрезана)' : '');
+      dbg('🖼 Миниатюра Windows: ' + tw + '×' + thh + ' px', '');
+      if (!state.hdShown) { coverEl.src = shown; coverEl.style.opacity = 1; }
+      if (!(state.hdShown && state.hdFree)) analyzeCover(useImg);   // если уже показана HD, не совпавшая с миниатюрой, цвета остаются от неё
+      change.thumbOk = true; checkChangeDone();
+    };
+    img.src = th;
+  });
+
+  // Обложка в высоком качестве: iTunes (два магазина) + Deezer. Кандидаты сверяются с миниатюрой из Windows
+  // по картинке — берётся только та, что визуально совпадает; чужие обложки отбрасываются.
+  function artistParts(a) {
+    return (a || '').split(/,|&|;|\bfeat\.?\b|\bft\.?\b|\bx\b/i).map(norm).filter(function (x) { return x.length >= 2; });
+  }
+  function artistOK(candArtist, parts) {
+    var ra = norm(candArtist);
+    if (!ra || !parts.length) return false;
+    return parts.some(function (p) { return ra.indexOf(p) >= 0 || p.indexOf(ra) >= 0; });
+  }
+
+  // логотип-заглушка: прозрачные края + почти только чёрное и белое (у настоящих обложек фон непрозрачный)
+  function isLogoThumb(img) {
+    try {
+      var S = 32, c = document.createElement('canvas'); c.width = c.height = S;
+      var x = c.getContext('2d'); x.drawImage(img, 0, 0, S, S);
+      var d = x.getImageData(0, 0, S, S).data, tr = 0, sat = 0, op = 0;
+      for (var i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 16) { tr++; continue; }
+        op++; sat += (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2])) / 255;
+      }
+      return tr / (S * S) > 0.12 && (op === 0 || sat / op < 0.15);
+    } catch (e) { return false; }
+  }
+
+  // «Открытка» от Spotify: квадратная картинка с прозрачными полями, где обложка стоит сверху, а под ней — логотип Spotify.
+  // Находим самый крупный сплошной блок непрозрачных строк (это обложка) и вырезаем только его. У обычной обложки прозрачных пикселей нет — вернём null.
+  function cropBranded(img) {
+    try {
+      var w = img.naturalWidth || img.width, hh = img.naturalHeight || img.height;
+      if (!w || !hh) return null;
+      var c = document.createElement('canvas'); c.width = w; c.height = hh;
+      var x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      var d = x.getImageData(0, 0, w, hh).data, tr = 0, i, y, xx;
+      for (i = 3; i < d.length; i += 4) if (d[i] < 16) tr++;
+      if (tr / (w * hh) < 0.05) return null;
+      var rows = [], minX = [], maxX = [];
+      for (y = 0; y < hh; y++) {
+        var n = 0, mn = w, mx = -1;
+        for (xx = 0; xx < w; xx++) if (d[(y * w + xx) * 4 + 3] >= 16) { n++; if (xx < mn) mn = xx; if (xx > mx) mx = xx; }
+        rows.push(n); minX.push(mn); maxX.push(mx);
+      }
+      var thr = w * 0.25, gap = Math.max(2, hh * 0.01), blocks = [], cur = null;
+      for (y = 0; y < hh; y++) {
+        if (rows[y] < thr) continue;
+        if (cur && y - cur.y1 <= gap) cur.y1 = y; else { cur = { y0: y, y1: y }; blocks.push(cur); }
+      }
+      if (!blocks.length) return null;
+      var b = blocks.reduce(function (a, k) { return (k.y1 - k.y0) > (a.y1 - a.y0) ? k : a; });
+      if (b.y1 - b.y0 < hh * 0.25) return null;
+      var x0 = w, x1 = 0;
+      for (y = b.y0; y <= b.y1; y++) { if (minX[y] < x0) x0 = minX[y]; if (maxX[y] > x1) x1 = maxX[y]; }
+      var cw = x1 - x0 + 1, ch = b.y1 - b.y0 + 1;
+      if (cw < w * 0.3) return null;
+      var o = document.createElement('canvas'); o.width = cw; o.height = ch;
+      o.getContext('2d').drawImage(img, x0, b.y0, cw, ch, 0, 0, cw, ch);
+      return o;
+    } catch (e) { return null; }
+  }
+
+  // сигнатура картинки: 16x16 средних цветов центрального квадрата
+  function sigOf(img) {
+    try {
+      var c = document.createElement('canvas'); c.width = c.height = 16;
+      var x = c.getContext('2d');
+      var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, m = Math.min(w, h);
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(img, (w - m) / 2, (h - m) / 2, m, m, 0, 0, 16, 16);
+      var d = x.getImageData(0, 0, 16, 16).data, out = [];
+      for (var i = 0; i < d.length; i += 4) out.push(d[i], d[i + 1], d[i + 2]);
+      return out;
+    } catch (e) { return null; }
+  }
+  function sigDist(a, b) {
+    var s = 0; for (var i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
+    return s / a.length / 255;
+  }
+
+  // ждём миниатюру Windows для текущего трека (она может прийти позже названия)
+  function whenThumb(token, maxMs) {
+    return new Promise(function (resolve) {
+      var t0 = performance.now();
+      (function poll() {
+        if (token !== state.coverToken) return resolve(null);
+        var fresh = state.thumbAt > state.changeAt - 1200;
+        if (fresh || performance.now() - t0 > maxMs) return resolve(fresh ? state.thumbImg : null);
+        setTimeout(poll, 120);
+      })();
+    });
+  }
+
+  function thumbNonSquare(img) {
+    var w = img && (img.naturalWidth || img.width), hh = img && (img.naturalHeight || img.height);
+    return !!(w && hh && Math.abs(w / hh - 1) > 0.08);   // видеокадр (YouTube и т.п.), а не квадратная обложка
+  }
+
+  // Варианты «исполнитель + название». У YouTube и похожих источников название часто вида «Исполнитель - Песня (Official Video)»,
+  // а в поле «исполнитель» стоит название канала — поэтому пробуем разобрать название и в прямом, и в обратном порядке.
+  function searchVariants(rawTitle, meta, extra) {
+    var list = [], seen = {};
+    function push(a, t) {
+      a = (a || '').trim(); t = (t || '').trim();
+      var b = t.replace(/\s+-\s+.*$/, '').trim() || t, k = norm(a) + '|' + norm(b);
+      if (!norm(b) || seen[k]) return;
+      seen[k] = 1; list.push({ artist: a, base: b, nt: norm(b), parts: artistParts(a) });
+    }
+    push(meta.artist, meta.title);
+    if (extra) {
+      var t = String(rawTitle || '').replace(/\s*[|\uFF5C].*$/, '')
+        .replace(/\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|visuali[sz]er|hd|hq|4k|mv)\b[^\)\]]*[\)\]]/ig, '')
+        .replace(/\s*[\(\[]\s*(feat|ft)\.?[^\)\]]*[\)\]]/ig, '')
+        .replace(/\s+(official\s+)?(music\s+)?(lyric\s+)?(video|audio|visuali[sz]er|lyrics?)\s*$/i, '').trim();
+      var mm = /^(.+?)\s+[-\u2013\u2014]\s+(.+)$/.exec(t);
+      if (mm) { push(mm[1], mm[2]); push(mm[2], mm[1]); }
+    }
+    return list;
+  }
+
+  function loadHDCover() {
+    var token = ++state.coverToken, m = state.meta;
+    state.hdDone = false;
+    if (!m.title) return;
+    var V = searchVariants(state.title, m, dev.cover === 'free' || (dev.cover === 'auto' && !state.album));
+    if (!V.length) return;
+    var na = norm(state.album), itunes = [], albumRes = [], deezer = [], jobs = [];
+    function nul() { return null; }
+    V.forEach(function (v, k) {
+      var term = enc(v.artist + ' ' + v.base);
+      jobs.push(getJSON('https://itunes.apple.com/search?media=music&entity=song&limit=25&term=' + term, true).catch(nul).then(function (r) { itunes.push(r); }));
+      if (k === 0) jobs.push(getJSON('https://itunes.apple.com/search?media=music&entity=song&limit=25&country=us&term=' + term, true).catch(nul).then(function (r) { itunes.push(r); }));
+      jobs.push(jsonp('https://api.deezer.com/search?output=jsonp&limit=15&q=' + enc((v.parts[0] ? v.artist.split(/,|&/)[0].trim() + ' ' : '') + v.base)).catch(nul).then(function (r) { deezer.push(r); }));
+    });
+    if (na) jobs.push(getJSON('https://itunes.apple.com/search?media=music&entity=album&limit=15&term=' + enc(V[0].artist + ' ' + state.album), true).catch(nul).then(function (r) { albumRes.push(r); }));
+    Promise.all(jobs).then(function () {
+      if (token !== state.coverToken) return;
+      var cands = [], seen = {};
+      function albumHit(name) {
+        var ra = norm(name);
+        return !!(na && ra && (ra === na || ra.indexOf(na) >= 0 || na.indexOf(ra) >= 0));
+      }
+      function artistAny(name) { return V.some(function (v) { return artistOK(name, v.parts); }); }
+      function add(title, artist, url, albumName) {
+        var rt = norm(title);
+        if (!url || !rt || seen[url]) return;
+        for (var k = 0; k < V.length; k++) {
+          if ((rt.indexOf(V[k].nt) >= 0 || V[k].nt.indexOf(rt) >= 0) && artistOK(artist, V[k].parts)) {
+            seen[url] = 1; cands.push({ url: url, exact: rt === V[k].nt, album: albumHit(albumName), v: k });
+            return;
+          }
+        }
+      }
+      itunes.forEach(function (r) {
+        ((r && r.results) || []).forEach(function (x) {
+          if (x.artworkUrl100) add(x.trackName, x.artistName, x.artworkUrl100.replace(/\d+x\d+(bb)?\.(jpg|png)$/i, '1000x1000bb.$2'), x.collectionName);
+        });
+      });
+      // поиск по самому альбому: обложка альбома подходит, даже если трек в каталоге записан иначе
+      albumRes.forEach(function (r) {
+        ((r && r.results) || []).forEach(function (x) {
+          if (x.artworkUrl100 && albumHit(x.collectionName) && artistAny(x.artistName)) {
+            var u = x.artworkUrl100.replace(/\d+x\d+(bb)?\.(jpg|png)$/i, '1000x1000bb.$2');
+            if (!seen[u]) { seen[u] = 1; cands.push({ url: u, exact: false, album: true, v: 0 }); }
+          }
+        });
+      });
+      deezer.forEach(function (r) {
+        ((r && r.data) || []).forEach(function (x) {
+          if (x.album) add(x.title, x.artist && x.artist.name, x.album.cover_xl || x.album.cover_big, x.album.title);
+        });
+      });
+      if (!cands.length) { state.hdDone = true; dbg('🖼 HD-обложка не найдена (iTunes/Deezer)' + (state.thumbLogo || !state.thumbImg ? ' — обложки нет' : ' — остаётся миниатюра'), 'warn'); if (state.thumbLogo || !state.thumbImg) state.coverInfo = 'нет'; return; }
+      function rank(c) { return (c.album ? 2 : 0) + (c.exact ? 1 : 0); }
+      cands.sort(function (a, b) { return rank(b) - rank(a); });
+      cands = cands.slice(0, 8);
+
+      return whenThumb(token, 2500).then(function (thumb) {
+        if (token !== state.coverToken) return;
+        var tsig = thumb ? sigOf(thumb) : null;
+        // «свободный» режим: у YouTube и других источников миниатюра — видеокадр, она не совпадёт с обложкой, поэтому берём лучшую по названию и исполнителю
+        var free = state.branded || dev.cover === 'free' || (dev.cover === 'auto' && (!state.album || !thumb || thumbNonSquare(thumb)));
+        return Promise.all(cands.map(function (c) {
+          return loadImg(c.url, true).then(function (r) { c.img = r.img; c.sig = sigOf(r.img); return c; })
+                                     .catch(function () { return c; });
+        })).then(function () {
+          if (token !== state.coverToken) return;
+          var pick = null, matched = false, withSig = cands.filter(function (c) { return c.sig; });
+          if (tsig) {
+            var best = 1;
+            withSig.forEach(function (c) { var d = sigDist(tsig, c.sig); if (d < best) { best = d; pick = c; } });
+            if (best > 0.12) pick = null; else matched = true;   // визуально другая обложка
+            if (!pick && !withSig.length) pick = cands[0];       // CORS закрыт у всех: проверить нельзя
+          } else {
+            pick = withSig[0] || cands[0];                       // миниатюры нет или это логотип: сверять не с чем
+          }
+          if (!pick && free) pick = withSig[0] || cands[0];      // свободный режим: берём лучшую, даже если не похожа на миниатюру
+          if (!pick) { state.hdDone = true; dbg('🖼 HD-обложка не совпала с миниатюрой — остаётся миниатюра Windows', 'warn'); return; }
+          var how = (pick.album ? 'по альбому' : 'по треку') + (matched ? ', сверена с миниатюрой' : (tsig ? ', отличается от миниатюры' : ', без сверки')) + (pick.v ? ', название разобрано как «Исполнитель — Песня»' : '');
+          var sz = pick.img ? ' ' + pick.img.naturalWidth + '×' + pick.img.naturalHeight : '';
+          state.coverInfo = 'HD' + sz + ' (' + how + ')';
+          dbg('🖼 HD-обложка найдена' + sz + ' — ' + how, 'ok');
+          if (pick.img && pick.sig && !matched) { analyzeCover(pick.img); state.hdFree = true; }   // цвета фона берём из показываемой обложки
+          coverEl.src = pick.url; coverEl.style.opacity = 1;
+          state.hdShown = true;
+          change.thumbOk = true; checkChangeDone();
+        });
+      });
+    }).catch(function () { state.hdDone = true; /* остаётся миниатюра из Windows */ });
+  }
+
+  /* ================= Эквалайзеры (аудио от Wallpaper Engine: 64 полосы слева + 64 справа) ================= */
+  var eq = { style: 'bars', y: .85, w: 1, h: 1, sens: 1, thick: .45, op: .85, rgb: '255,255,255', light: true,
+             raw: new Float32Array(64), v: new Float32Array(64), ctx: null,
+             y2: .55, cmode: 'auto', custom: '255,255,255', c1: [255, 80, 120], c2: [80, 160, 255], cc1: [255, 80, 120], cc2: [80, 160, 255] };
+  eq.cfg = {};
+  ['bars', 'mirror', 'dashes', 'blocks', 'wave'].forEach(function (s) {
+    eq.cfg[s] = { y: .85, y2: .55, w: 1, h: 1, sens: 1, thick: .45, op: .85, cmode: 'auto', custom: '255,255,255' };
+  });
+  var BINS = 48;                                    // верхние полосы почти пустые — берём только нижние 48
+  if (window.wallpaperRegisterAudioListener) window.wallpaperRegisterAudioListener(function (a) {
+    for (var i = 0; i < 64; i++) eq.raw[i] = ((a[i] || 0) + (a[i + 64] || 0)) / 2;
+  });
+  // два главных акцентных цвета обложки (для текста, обводок, полоски, эквалайзера; фоны используют state.palette отдельно)
+  function eqPickColors() {
+    var pal = (state.palette || []).map(function (e) {
+      var hv = rgb2hsv(e.c[0], e.c[1], e.c[2]);
+      // приоритет живым насыщенным цветам обложки, чтобы яркий красный/синий не проигрывал чёрному/серому фону
+      var chromaBoost = hv[1] >= 0.22 ? (0.4 + Math.pow(hv[1], 1.45) * 3.0) : 0.14;
+      var valBoost = 0.2 + Math.pow(hv[2], 0.85) * 0.9;
+      return { c: e.c, hv: hv, s: chromaBoost * Math.pow(Math.max(e.w, 0.01), 0.55) * valBoost };
+    }).sort(function (a, b) { return b.s - a.s; });
+    if (!pal.length) return;
+
+    // сохраняем чистый оттенок и насыщенность в HSV (без примешивания белого, которое превращало красный в розовый)
+    function tuneAccent(c) {
+      var hv = rgb2hsv(c[0], c[1], c[2]);
+      if (hv[1] >= 0.22) {
+        var sat = Math.min(1, Math.max(hv[1], hv[1] * 1.12));
+        var val = Math.min(1, Math.max(hv[2], 0.82));
+        return hsv2rgb(hv[0], sat, val);
+      }
+      // для нейтральных (чёрно-белых) обложек мягко приподнимаем слишком тёмный тон
+      var v = hv[2] < 0.35 ? 0.35 + hv[2] * 0.6 : hv[2];
+      return hsv2rgb(hv[0], hv[1], Math.min(1, v));
+    }
+
+    function hdist(x, y) { var t = Math.abs(x - y) % 360; return t > 180 ? 360 - t : t; }
+    var a = pal[0], b = null;
+    for (var i = 1; i < pal.length && !b; i++) {
+      var d = pal[i], dr = a.c[0] - d.c[0], dg = a.c[1] - d.c[1], db = a.c[2] - d.c[2];
+      var dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      var hueDiff = (a.hv[1] >= 0.22 && d.hv[1] >= 0.22) ? hdist(a.hv[0], d.hv[0]) : 999;
+      if (dist > 65 && hueDiff > 28) b = d;
+    }
+    if (!b) b = pal[1] || a;
+    eq.c1 = tuneAccent(a.c);
+    eq.c2 = tuneAccent(b.c);
+  }
+  function eqResize() { var c = $('eq'); c.width = innerWidth; c.height = innerHeight; }
+  eqResize(); window.addEventListener('resize', eqResize);
+  eq.ctx = $('eq').getContext('2d');
+  $('eq').style.display = 'block';
+
+  function eqVal(t) {                               // t: 0..1 по ширине -> сглаженное значение 0..1
+    var p = Math.min(1, Math.max(0, t)) * (BINS - 1), i = Math.floor(p), f = p - i, j = Math.min(BINS - 1, i + 1);
+    return eq.v[i] * (1 - f) + eq.v[j] * f;
+  }
+
+  function drawEq() {
+    if (eq.style === 'none') return;
+    var cf = eq.cfg[eq.style]; if (!cf) return;      // настройки текущего стиля
+    eq.y = cf.y; eq.y2 = cf.y2; eq.w = cf.w; eq.h = cf.h; eq.sens = cf.sens; eq.thick = cf.thick; eq.op = cf.op; eq.cmode = cf.cmode; eq.custom = cf.custom;
+    var c = $('eq'), x = eq.ctx, W = c.width, H = c.height;
+    x.clearRect(0, 0, W, H);
+    for (var i = 0; i < 64; i++) {                  // быстрый подъём, плавное падение
+      var tg = Math.min(1, Math.pow(eq.raw[i] * eq.sens * 1.8, 0.8));
+      eq.v[i] += (tg - eq.v[i]) * (tg > eq.v[i] ? 0.55 : 0.14);
+    }
+    var cw = W * eq.w, x0 = (W - cw) / 2, cy = H * eq.y, maxH = H * 0.30 * eq.h, col = 'rgb(' + eq.rgb + ')', k, h, n;
+    for (i = 0; i < 3; i++) { eq.cc1[i] += (eq.c1[i] - eq.cc1[i]) * 0.05; eq.cc2[i] += (eq.c2[i] - eq.cc2[i]) * 0.05; }   // плавная смена цветов при новой обложке
+    function rgbs(c) { return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')'; }
+    var fill = col, fill2 = null;
+    if (eq.cmode === 'custom') fill = 'rgb(' + eq.custom + ')';
+    else if (eq.cmode === 'cover') {
+      if (eq.style === 'mirror') { fill = rgbs(eq.cc1); fill2 = rgbs(eq.cc2); }          // верхние столбики — 1-й цвет, нижние — 2-й
+      else if (eq.style === 'dashes') {                                                      // выше линии — 1-й цвет, ниже — 2-й
+        fill = x.createLinearGradient(0, cy - maxH, 0, cy + maxH);
+        fill.addColorStop(0, rgbs(eq.cc1)); fill.addColorStop(0.5, rgbs(eq.cc1)); fill.addColorStop(0.5, rgbs(eq.cc2)); fill.addColorStop(1, rgbs(eq.cc2));
+      } else { fill = x.createLinearGradient(0, cy - maxH, 0, cy); fill.addColorStop(0, rgbs(eq.cc1)); fill.addColorStop(1, rgbs(eq.cc2)); }   // сверху 1-й цвет, у основания 2-й
+    }
+    x.globalAlpha = eq.op; x.fillStyle = fill; x.strokeStyle = fill;
+
+    if (eq.style === 'bars' || eq.style === 'dashes' || eq.style === 'mirror') {
+      // bars — столбики растут вверх от линии (тонкие или толстые); dashes — симметрично вверх и вниз, в тишине остаются штрихи
+      n = 72; var slot = cw / n, bw = Math.max(1, slot * eq.thick * 1.6), mirror = eq.style === 'dashes', two = eq.style === 'mirror', cy2 = H * eq.y2;
+      for (k = 0; k < n; k++) {
+        h = Math.max(2, eqVal(k / (n - 1)) * maxH);
+        var bx = x0 + k * slot + (slot - bw) / 2;
+        if (mirror) x.fillRect(bx, cy - h, bw, h * 2); else x.fillRect(bx, cy - h, bw, h);
+        if (two) { x.fillStyle = fill2 || fill; x.fillRect(bx, cy2, bw, h); x.fillStyle = fill; }   // нижняя половинка: те же столбики вниз от своей линии
+      }
+    } else if (eq.style === 'blocks') {
+      // сетка квадратиков: столбец «горит» снизу вверх, как в пиксельном эквалайзере
+      var cols = 24, rows = 10, cwid = cw / cols, chei = maxH / rows, gap = Math.max(1, Math.min(cwid, chei) * (1 - eq.thick * 1.6 > 0.1 ? (1 - eq.thick * 1.6) : 0.1) * 0.5);
+      for (k = 0; k < cols; k++) {
+        var lit = Math.max(1, Math.ceil(eqVal(k / (cols - 1)) * rows));
+        for (var r = 0; r < lit; r++) x.fillRect(x0 + k * cwid + gap / 2, cy - (r + 1) * chei + gap / 2, cwid - gap, chei - gap);
+      }
+    } else if (eq.style === 'wave') {
+      // плавная линия-осциллограмма с цветовым расщеплением RGB; края затухают
+      var M = 40, pts = [];
+      for (k = 0; k <= M; k++) {
+        var env = Math.pow(Math.sin(Math.PI * k / M), 0.7);
+        pts.push({ x: x0 + cw * k / M, y: cy - (k % 2 ? 1 : -1) * eqVal(k / M) * maxH * env * 0.8 });
+      }
+      var chs = [['255,40,50', -2, -1.5], ['40,255,90', 0, 0], ['60,100,255', 2, 1.5]];
+      x.lineWidth = 2.2; x.lineJoin = 'round';
+      x.globalCompositeOperation = eq.light ? 'lighter' : 'multiply';
+      chs.forEach(function (ch) {
+        x.strokeStyle = 'rgb(' + ch[0] + ')'; x.beginPath(); x.moveTo(pts[0].x + ch[1], pts[0].y + ch[2]);
+        for (var q = 1; q < pts.length - 1; q++) {
+          var mx = (pts[q].x + pts[q + 1].x) / 2 + ch[1], my = (pts[q].y + pts[q + 1].y) / 2 + ch[2];
+          x.quadraticCurveTo(pts[q].x + ch[1], pts[q].y + ch[2], mx, my);
+        }
+        x.stroke();
+      });
+      x.globalCompositeOperation = 'source-over';
+    }
+    x.globalAlpha = 1;
+  }
+
+  /* ================= Анализ обложки ================= */
+  function lumOf(c) { return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255; }
+
+  function analyzeCover(img) {
+    try {
+      var S = 128, cv = document.createElement('canvas');
+      cv.width = cv.height = S;
+      var ctx = cv.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, im = Math.min(iw, ih);   // квадрат по центру: у видеокадров YouTube края не должны красить фон
+      ctx.drawImage(img, (iw - im) / 2, (ih - im) / 2, im, im, 0, 0, S, S);
+      var d = ctx.getImageData(0, 0, S, S).data;
+
+      // средний цвет
+      var r = 0, g = 0, b = 0, n = d.length / 4;
+      for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+      state.avg = [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+      state.avgLum = lumOf(state.avg);
+
+      // палитра с долями
+      state.palette = extractPalette(d);
+      state.wavePalette = extractWavePalette(d, S);
+      var pl = 0;
+      state.palette.forEach(function (p) { pl += lumOf(p.c) * p.w; });
+      state.paletteLum = pl;
+    } catch (err) { /* оставляем прежние значения */ }
+
+    eqPickColors();
+    starsSetColors();
+    meshColors();
+    w3SetCover(img);
+    applyTheme();
+    pushPalette(state.palette);
+  }
+
+  // Палитра обложки. Цветные пиксели (даже если их мало) группируются по оттенку,
+  // чтобы редкие акценты (жёлтая линия, красный текст, радуга) не терялись среди тёмного/серого фона.
+  function rgb2hsv(r, g, b) {
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b), dd = mx - mn, h = 0;
+    if (dd) {
+      if (mx === r) h = ((g - b) / dd) % 6; else if (mx === g) h = (b - r) / dd + 2; else h = (r - g) / dd + 4;
+      h *= 60; if (h < 0) h += 360;
+    }
+    return [h, mx ? dd / mx : 0, mx / 255];
+  }
+
+  function hsv2rgb(h, s, v) {
+    var c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c, r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+    return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+  }
+  function vivid(c) {                                   // чуть насыщеннее и не темнее 42%
+    var h = rgb2hsv(c[0], c[1], c[2]);
+    return hsv2rgb(h[0], Math.min(1, h[1] * 1.2), Math.max(h[2], 0.42));
+  }
+
+  function extractPalette(d) {
+    var total = d.length / 4, NB = 36;
+    var cnt = new Float32Array(4096), sr = new Float32Array(4096), sg = new Float32Array(4096), sb = new Float32Array(4096);
+    var hn = new Float32Array(NB), hr = new Float32Array(NB), hg = new Float32Array(NB), hb = new Float32Array(NB), hw = new Float32Array(NB);
+
+    for (var i = 0; i < d.length; i += 4) {
+      var r = d[i], g = d[i + 1], b = d[i + 2], hsv = rgb2hsv(r, g, b);
+      if (hsv[1] >= 0.30 && hsv[2] >= 0.22) {              // яркий цветной пиксель -> корзина по оттенку
+        var bin = Math.min(NB - 1, Math.floor(hsv[0] / (360 / NB))), w = Math.pow(hsv[1] * hsv[2], 2);
+        hn[bin]++; hr[bin] += r * w; hg[bin] += g * w; hb[bin] += b * w; hw[bin] += w;
+      } else {                                             // тёмный / серый / светлый -> корзина по RGB
+        var k = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+        cnt[k]++; sr[k] += r; sg[k] += g; sb[k] += b;
+      }
+    }
+
+    // --- цветные группы: оттенки ближе 18° сливаются; даже 0.08% площади достаточно, чтобы цвет попал в палитру ---
+    function hdist(x, y) { var t = Math.abs(x - y) % 360; return t > 180 ? 360 - t : t; }
+    var order = [];
+    for (var q = 0; q < NB; q++) if (hn[q] > 0) order.push(q);
+    order.sort(function (x, y) { return hn[y] - hn[x]; });
+    var minSeed = Math.max(6, total * 0.0008), groups = [];
+    order.forEach(function (q) {
+      var hue = (q + 0.5) * 360 / NB, best = -1, bd = 1e9;
+      groups.forEach(function (c, idx) { var dd = hdist(c.hue, hue); if (dd < bd) { bd = dd; best = idx; } });
+      var tgt = null;
+      if (best >= 0 && bd < 18) tgt = groups[best];
+      else if (hn[q] >= minSeed) { tgt = { hue: hue, n: 0, r: 0, g: 0, b: 0, w: 0 }; groups.push(tgt); }
+      if (tgt) { tgt.n += hn[q]; tgt.r += hr[q]; tgt.g += hg[q]; tgt.b += hb[q]; tgt.w += hw[q]; }
+    });
+    groups.sort(function (x, y) { return y.n - x.n; });
+    var chroma = groups.slice(0, 8).map(function (c) {
+      return { c: vivid([c.r / c.w, c.g / c.w, c.b / c.w]), share: c.n / total, hue: c.hue };
+    });
+
+    // --- нейтральные цвета (фон): жадное слияние похожих ---
+    var list = [];
+    for (var j = 0; j < 4096; j++) if (cnt[j] > 0) list.push({ n: cnt[j], c: [sr[j] / cnt[j], sg[j] / cnt[j], sb[j] / cnt[j]] });
+    list.sort(function (x, y) { return y.n - x.n; });
+    var cl = [];
+    list.forEach(function (it) {
+      var best = -1, bd = 1e9;
+      cl.forEach(function (c, idx) {
+        var dr = c.c[0] - it.c[0], dg = c.c[1] - it.c[1], db = c.c[2] - it.c[2], dist = Math.sqrt(dr * dr + dg * dg + db * db);
+        if (dist < bd) { bd = dist; best = idx; }
+      });
+      if (best >= 0 && bd < 46) {
+        var c = cl[best], w2 = c.n + it.n;
+        for (var t = 0; t < 3; t++) c.c[t] = (c.c[t] * c.n + it.c[t] * it.n) / w2;
+        c.n = w2;
+      } else cl.push({ n: it.n, c: it.c.slice() });
+    });
+    cl.sort(function (x, y) { return y.n - x.n; });
+    var neutral = cl.slice(0, 4).filter(function (c, idx) { return idx === 0 || c.n / total >= 0.012; })
+                    .map(function (c) { return { c: c.c, share: c.n / total }; });
+    neutral.sort(function (x, y) { return lumOf(x.c) - lumOf(y.c); });
+
+    // --- веса: корень из доли (редкие цвета заметнее), минимум 4% цикла ---
+    var all = neutral.concat(chroma);
+    if (!all.length) return [{ c: [20, 20, 28], w: 0.5 }, { c: [70, 70, 110], w: 0.5 }];
+    var s = 0; all.forEach(function (e) { e.w = Math.sqrt(e.share); s += e.w; });
+    all.forEach(function (e) { e.w /= s; });
+    var FL = 0.04, low = all.filter(function (e) { return e.w < FL; }), hi = all.filter(function (e) { return e.w >= FL; });
+    if (low.length && hi.length) {
+      var hs = 0; hi.forEach(function (e) { hs += e.w; });
+      var room = 1 - low.length * FL;
+      hi.forEach(function (e) { e.w = e.w / hs * room; });
+      low.forEach(function (e) { e.w = FL; });
+    }
+
+    // --- порядок: самый тёмный нейтральный, затем цвета по оттенку (радуга остаётся радугой), затем остальные нейтральные ---
+    chroma.sort(function (x, y) { return x.hue - y.hue; });
+    var seq = [];
+    if (neutral.length) seq.push(neutral[0]);
+    seq = seq.concat(chroma).concat(neutral.slice(1));
+    var pal = seq.map(function (e) { return { c: [Math.round(e.c[0]), Math.round(e.c[1]), Math.round(e.c[2])], w: e.w }; });
+    if (pal.length === 1) pal.push({ c: pal[0].c.slice(), w: 0 });
+    return pal;
+  }
+
+  function applyTheme() {
+    var waves = state.bgMode === 'waves' && wave.ok, waves2 = state.bgMode === 'waves2' && w2.ok, waves3 = state.bgMode === 'waves3' && w3.ok;
+    var blobsOn = state.bgMode === 'blobs';
+    var starsOn = state.bgMode === 'stars', imageOn = state.bgMode === 'image';
+    var snowOn = state.bgMode === 'snow', meshOn = state.bgMode === 'mesh', blurOn = state.bgMode === 'blurcover';
+    var lum = (starsOn || snowOn) ? 0 : imageOn ? Math.min(1, bgimg.lum * bgimg.bright) : blurOn ? Math.min(1, state.avgLum * blur.bright) : waves3 ? Math.min(1, state.avgLum * w3.bright) : (waves || waves2 || blobsOn || meshOn) ? state.paletteLum : state.avgLum;
+    var dark = lum > 0.6;
+    document.documentElement.style.setProperty('--fg', dark ? '#111' : '#fff');
+    document.documentElement.style.setProperty('--shadow', dark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.4)');
+    theme.dark = dark; applyStyle();
+    eq.rgb = dark ? '17,17,17' : '255,255,255'; eq.light = !dark;
+    document.body.style.backgroundColor = (starsOn || snowOn) ? '#03040a' : imageOn ? '#05060a' : 'rgb(' + state.avg[0] + ',' + state.avg[1] + ',' + state.avg[2] + ')';
+    $('stars').style.display = starsOn ? 'block' : 'none';
+    $('snow').style.display = snowOn ? 'block' : 'none';
+    $('mesh').style.display = meshOn ? 'block' : 'none';
+    $('blurbg').style.display = blurOn ? 'block' : 'none';
+    $('bgimg').style.display = imageOn ? 'block' : 'none';
+    $('waves').style.display = waves ? 'block' : 'none';
+    $('waves2').style.display = waves2 ? 'block' : 'none';
+    $('waves3').style.display = waves3 ? 'block' : 'none';
+    $('blobs').style.display = blobsOn ? 'block' : 'none';
+    $('grain').style.display = blobsOn ? 'block' : 'none';
+  }
+
+  /* ================= Волны (WebGL) ================= */
+  var wave = { gl: null, prog: null, tex: [null, null], cur: 0, mixStart: -1,
+               t: 0, last: performance.now(), speed: 1, scale: 1, chaos: 1, zoom: 1, angle: 62 * Math.PI / 180, ok: false, u: {} };
+
+  function initWaves() {
+    var c = $('waves');
+    var gl = c.getContext('webgl', { antialias: false, alpha: false });
+    if (!gl) return;
+
+    var vs = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
+    var fs = `
+precision highp float;
+uniform vec2 uRes;
+uniform float uTime, uScale, uMix, uAngle, uChaos, uZoom;
+uniform sampler2D uCur, uNew;
+
+float hash(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++){
+    v += a * vnoise(p);
+    p = p * 2.03 + vec2(17.1, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+vec3 pal(float s){
+  vec3 a = texture2D(uCur, vec2(s, 0.5)).rgb;
+  vec3 b = texture2D(uNew, vec2(s, 0.5)).rgb;
+  return mix(a, b, uMix);
+}
+
+void main(){
+  // камера отодвинута: в кадр попадает больше линий и изгибов
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y * 1.9 * uZoom;
+
+  // x - поперёк полос, y - вдоль (сжат => полосы длинные)
+  vec2 d = vec2(cos(uAngle), sin(uAngle));
+  vec2 n = vec2(sin(uAngle), -cos(uAngle));
+  float x = dot(p, n);
+  float y = dot(p, d) * 0.55;
+  float t = uTime;
+  float C = uChaos;
+
+  // хаотичные искажения: крупные, средние и мелкая "дрожь" линий
+  x += C * 0.30 * (fbm(vec2(x * 0.9, y * 0.9) + vec2(t * 0.020, 3.1)) - 0.5) * 2.0;
+  y += C * 0.25 * (fbm(vec2(x * 0.8 + 11.0, y * 0.8) + vec2(0.0, t * 0.017)) - 0.5) * 2.0;
+  x += C * 0.09 * (fbm(vec2(x * 3.5 + 7.0, y * 2.2) + vec2(t * 0.030, -t * 0.040)) - 0.5) * 2.0;
+
+  // плавные большие изгибы, складки и петли
+  x += 0.30 * sin(1.9 * y + 1.1 * x + t * 0.13 + 0.5);
+  y += 0.35 * sin(1.4 * x - 0.7 * y - t * 0.10 + 2.0);
+  x += 0.22 * sin(3.3 * y + 2.1 * x - t * 0.17 + 4.0);
+  y += 0.18 * sin(2.6 * x + 1.9 * y + t * 0.12 + 1.0);
+  float f = x + 0.20 * sin(5.6 * x + 1.3 * y + t * 0.20);
+
+  // индекс палитры: неравномерный шаг между линиями
+  float s = f * 2.2 * uScale
+          + C * 0.6 * (fbm(vec2(f * 1.3 + 5.0, y * 0.7) + vec2(t * 0.015, 0.0)) - 0.5)
+          + t * 0.03;
+  vec3 c = pal(s);
+
+  // тонкие блики и тёмные линии, яркость меняется от линии к линии
+  float ph = s * 6.2831853;
+  float br = pow(0.5 + 0.5 * sin(ph * 2.0 + 0.7), 48.0);
+  float dk = pow(0.5 + 0.5 * sin(ph * 3.0 + 2.1), 70.0);
+  br *= clamp(smoothstep(0.30, 0.70, fbm(vec2(f * 2.2, y * 1.4) + 20.0)) * 1.6, 0.0, 1.0);
+  dk *= 0.5 + 0.5 * smoothstep(0.30, 0.70, fbm(vec2(f * 2.7 + 40.0, y * 1.1)));
+
+  vec3 col = mix(c, mix(c, vec3(1.0), 0.55), br * 0.55);
+  col *= 1.0 - 0.7 * dk;
+
+  float L = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(col, vec3(1.0), smoothstep(0.8, 1.0, L) * 0.4);
+  float v = smoothstep(1.6, 0.4, length(p / (1.9 * uZoom)));
+  col *= 0.88 + 0.12 * v;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+    function sh(type, src) {
+      var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+    }
+    var v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+    if (!v || !f) return;
+    var prog = gl.createProgram();
+    gl.attachShader(prog, v); gl.attachShader(prog, f); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+    gl.useProgram(prog);
+
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    for (var i = 0; i < 2; i++) {
+      var t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      wave.tex[i] = t;
+    }
+    ['uRes', 'uTime', 'uScale', 'uMix', 'uAngle', 'uChaos', 'uZoom', 'uCur', 'uNew'].forEach(function (n) { wave.u[n] = gl.getUniformLocation(prog, n); });
+    gl.uniform1i(wave.u.uCur, 0);
+    gl.uniform1i(wave.u.uNew, 1);
+
+    wave.gl = gl; wave.prog = prog; wave.ok = true;
+    upload(0, buildPaletteBytes(state.palette));
+    upload(1, buildPaletteBytes(state.palette));
+    resize();
+    window.addEventListener('resize', resize);
+  }
+
+  function resize() {
+    var c = $('waves');
+    c.width  = Math.max(2, Math.floor((innerWidth + 160) * 0.75));   // 75% разрешения: тонкие линии остаются чёткими
+    c.height = Math.max(2, Math.floor((innerHeight + 160) * 0.75));
+    if (wave.gl) wave.gl.viewport(0, 0, c.width, c.height);
+  }
+
+  function upload(i, bytes) {
+    var gl = wave.gl;
+    gl.bindTexture(gl.TEXTURE_2D, wave.tex[i]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+  }
+
+  // Палитра в виде полоски 256x1: ширина цвета = его доля на обложке, границы мягкие и зациклены
+  function rgb2oklab(r, g, b) {
+    function lin(v) { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+    var lr = lin(r), lg = lin(g), lb = lin(b);
+    var l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+    var m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+    var s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+    return [
+      0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    ];
+  }
+  function oklab2rgb(L, a, b) {
+    var l = L + 0.3963377774 * a + 0.2158037573 * b;
+    var m = L - 0.1055613458 * a - 0.0638541728 * b;
+    var s = L - 0.0894841775 * a - 1.2914855480 * b;
+    l = l * l * l; m = m * m * m; s = s * s * s;
+    function srgb(x) {
+      x = Math.min(1, Math.max(0, x));
+      return Math.round((x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055) * 255);
+    }
+    return [
+      srgb(+4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+      srgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+      srgb(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)
+    ];
+  }
+
+  // Улучшенная палитра специально для «Волны 1» и «Волны 2»: K-Means в OKLab + отсечение рамок + замкнутое кольцо цветов
+  function extractWavePalette(d, S) {
+    var pts = [], totalW = 0, margin = Math.floor(S * 0.07);
+    for (var y = 0; y < S; y += 2) {
+      var borderY = (y < margin || y >= S - margin);
+      for (var x = 0; x < S; x += 2) {
+        var idx = (y * S + x) * 4;
+        var w = (borderY || x < margin || x >= S - margin) ? 0.35 : 1.0;
+        var lab = rgb2oklab(d[idx], d[idx + 1], d[idx + 2]);
+        pts.push([lab[0], lab[1], lab[2], w]);
+        totalW += w;
+      }
+    }
+    if (!pts.length) return state.palette;
+
+    // K-Means++ инициализация (детерминированная — выбираем самые удалённые в OKLab, с бонусом за насыщенность)
+    var K = 7, centers = [];
+    // 1-й центр: самый весомый/типичный пиксель из сетки
+    centers.push([pts[Math.floor(pts.length * 0.5)][0], pts[Math.floor(pts.length * 0.5)][1], pts[Math.floor(pts.length * 0.5)][2]]);
+    var minD = new Float32Array(pts.length);
+    for (var i = 0; i < pts.length; i++) minD[i] = 1e9;
+
+    for (var k = 1; k < K; k++) {
+      var last = centers[k - 1], bestIdx = 0, bestScore = -1;
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i], dL = p[0] - last[0], da = p[1] - last[1], db = p[2] - last[2];
+        var dist = dL * dL + da * da + db * db;
+        if (dist < minD[i]) minD[i] = dist;
+        var chroma = Math.sqrt(p[1] * p[1] + p[2] * p[2]);
+        var score = minD[i] * p[3] * (1.0 + chroma * 3.5);
+        if (score > bestScore) { bestScore = score; bestIdx = i; }
+      }
+      centers.push([pts[bestIdx][0], pts[bestIdx][1], pts[bestIdx][2]]);
+    }
+
+    // 7 итераций K-Means в OKLab
+    var sumL = new Float64Array(K), sumA = new Float64Array(K), sumB = new Float64Array(K), sumW = new Float64Array(K);
+    for (var it = 0; it < 7; it++) {
+      sumL.fill(0); sumA.fill(0); sumB.fill(0); sumW.fill(0);
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i], bi = 0, bd = 1e9;
+        for (var c = 0; c < K; c++) {
+          var cc = centers[c], dL = p[0] - cc[0], da = p[1] - cc[1], db = p[2] - cc[2];
+          var dd = dL * dL + da * da + db * db;
+          if (dd < bd) { bd = dd; bi = c; }
+        }
+        var pw = p[3];
+        sumL[bi] += p[0] * pw; sumA[bi] += p[1] * pw; sumB[bi] += p[2] * pw; sumW[bi] += pw;
+      }
+      for (var c = 0; c < K; c++) {
+        if (sumW[c] > 0) {
+          centers[c][0] = sumL[c] / sumW[c];
+          centers[c][1] = sumA[c] / sumW[c];
+          centers[c][2] = sumB[c] / sumW[c];
+        }
+      }
+    }
+
+    // Собираем кластеры, отфильтровываем микро-шум и сливаем слишком близкие в OKLab
+    var raw = [];
+    for (var c = 0; c < K; c++) {
+      var share = sumW[c] / totalW;
+      var ch = Math.sqrt(centers[c][1] * centers[c][1] + centers[c][2] * centers[c][2]);
+      if (share < 0.008 && !(ch > 0.08 && share >= 0.0035)) continue;
+      raw.push({ L: centers[c][0], a: centers[c][1], b: centers[c][2], ch: ch, share: share });
+    }
+    raw.sort(function (x, y) { return y.share - x.share; });
+    var merged = [];
+    raw.forEach(function (it) {
+      var best = -1, bd = 1e9;
+      merged.forEach(function (m, idx) {
+        var dL = m.L - it.L, da = m.a - it.a, db = m.b - it.b, dd = Math.sqrt(dL * dL + da * da + db * db);
+        if (dd < bd) { bd = dd; best = idx; }
+      });
+      if (best >= 0 && bd < 0.075) {
+        var m = merged[best], tw = m.share + it.share;
+        m.L = (m.L * m.share + it.L * it.share) / tw;
+        m.a = (m.a * m.share + it.a * it.share) / tw;
+        m.b = (m.b * m.share + it.b * it.share) / tw;
+        m.ch = Math.sqrt(m.a * m.a + m.b * m.b);
+        m.share = tw;
+      } else {
+        merged.push({ L: it.L, a: it.a, b: it.b, ch: it.ch, share: it.share });
+      }
+    });
+    if (!merged.length) return state.palette;
+
+    // Лёгкое усиление чистоты только у хроматических цветов (глубокие тёмные остаются глубокими!)
+    merged.forEach(function (m) {
+      if (m.ch > 0.045) { m.a *= 1.09; m.b *= 1.09; m.ch *= 1.09; }
+      m.c = oklab2rgb(m.L, m.a, m.b);
+    });
+
+    // Гармоничный порядок в замкнутом кольце (жадный ближайший сосед в OKLab от самого тёмного)
+    merged.sort(function (x, y) { return x.L - y.L; });
+    var ring = [merged.shift()];
+    while (merged.length) {
+      var prev = ring[ring.length - 1], bi = 0, bd = 1e9;
+      for (var i = 0; i < merged.length; i++) {
+        var m = merged[i], dL = prev.L - m.L, da = prev.a - m.a, db = prev.b - m.b;
+        var dd = dL * dL + da * da + db * db;
+        if (dd < bd) { bd = dd; bi = i; }
+      }
+      ring.push(merged.splice(bi, 1)[0]);
+    }
+
+    // Веса: мягкий степенной баланс (доминирующие цвета ведут, акценты не теряются)
+    var s = 0;
+    ring.forEach(function (e) { e.w = Math.pow(e.share, 0.68); s += e.w; });
+    ring.forEach(function (e) { e.w /= s; });
+    var FL = 0.045, low = ring.filter(function (e) { return e.w < FL; }), hi = ring.filter(function (e) { return e.w >= FL; });
+    if (low.length && hi.length) {
+      var hs = 0; hi.forEach(function (e) { hs += e.w; });
+      var room = 1 - low.length * FL;
+      hi.forEach(function (e) { e.w = e.w / hs * room; });
+      low.forEach(function (e) { e.w = FL; });
+    }
+    var out = ring.map(function (e) { return { c: e.c, w: e.w }; });
+    if (out.length === 1) out.push({ c: out[0].c.slice(), w: 0 });
+    return out;
+  }
+
+  // Палитра волн 256x1 с перцептивным смешиванием границ в OKLab (без грязных серых стыков)
+  function buildWavePaletteBytes(pal) {
+    var n = pal.length, N = 256, data = new Uint8Array(N * 4);
+    var labs = pal.map(function (p) { return rgb2oklab(p.c[0], p.c[1], p.c[2]); });
+    var starts = [], ends = [], acc = 0, blend = [];
+    pal.forEach(function (p) { starts.push(acc); acc += p.w; ends.push(acc); });
+    for (var i = 0; i < n; i++) {
+      var j = (i + 1) % n;
+      blend[i] = Math.min(0.055, 0.34 * Math.min(pal[i].w, pal[j].w));
+    }
+    function sstep(a, b, x) { var t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+    function mixLab(a, b, t) { return oklab2rgb(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t); }
+
+    for (var x = 0; x < N; x++) {
+      var u = (x + 0.5) / N, s = 0;
+      while (s < n - 1 && u >= ends[s]) s++;
+      var col = pal[s].c, nx = (s + 1) % n, pv = (s - 1 + n) % n;
+      if (u > ends[s] - blend[s]) col = mixLab(labs[s], labs[nx], sstep(ends[s] - blend[s], ends[s] + blend[s], u));
+      if (u < starts[s] + blend[pv]) col = mixLab(labs[pv], labs[s], sstep(starts[s] - blend[pv], starts[s] + blend[pv], u));
+      data[x * 4] = col[0]; data[x * 4 + 1] = col[1]; data[x * 4 + 2] = col[2]; data[x * 4 + 3] = 255;
+    }
+    return data;
+  }
+
+  function buildPaletteBytes(pal) {
+    var n = pal.length, N = 256, data = new Uint8Array(N * 4);
+    var starts = [], ends = [], acc = 0, blend = [];
+    pal.forEach(function (p) { starts.push(acc); acc += p.w; ends.push(acc); });
+    for (var i = 0; i < n; i++) {
+      var j = (i + 1) % n;
+      blend[i] = Math.min(0.035, 0.25 * Math.min(pal[i].w, pal[j].w));
+    }
+    function sstep(a, b, x) { var t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+    function mixc(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+
+    for (var x = 0; x < N; x++) {
+      var u = (x + 0.5) / N, s = 0;
+      while (s < n - 1 && u >= ends[s]) s++;
+      var col = pal[s].c, nx = (s + 1) % n, pv = (s - 1 + n) % n;
+      if (u > ends[s] - blend[s]) col = mixc(pal[s].c, pal[nx].c, sstep(ends[s] - blend[s], ends[s] + blend[s], u));
+      if (u < starts[s] + blend[pv]) col = mixc(pal[pv].c, pal[s].c, sstep(starts[s] - blend[pv], starts[s] + blend[pv], u));
+      data[x * 4] = col[0]; data[x * 4 + 1] = col[1]; data[x * 4 + 2] = col[2]; data[x * 4 + 3] = 255;
+    }
+    return data;
+  }
+
+  // Плавный переход к палитре нового трека
+  function pushPalette(pal) {
+    var useV1 = state.wavePalMode === 'v1';
+    var wpal = useV1 ? pal : (state.wavePalette || pal);
+    blobsSetPalette(pal);
+    w2SetPalette(wpal);
+    if (!wave.ok) return;
+    if (wave.mixStart >= 0) wave.cur = 1 - wave.cur; // переход ещё шёл — зафиксировать его результат
+    upload(1 - wave.cur, useV1 ? buildPaletteBytes(wpal) : buildWavePaletteBytes(wpal));
+    wave.mixStart = performance.now();
+  }
+
+  function drawWaves(now) {
+    var dt = Math.min(0.1, (now - wave.last) / 1000);
+    wave.last = now;
+    wave.t += dt * wave.speed;
+
+    var m = 0;
+    if (wave.mixStart >= 0) {
+      m = Math.min(1, (now - wave.mixStart) / 1800);
+      if (m >= 1) { wave.cur = 1 - wave.cur; wave.mixStart = -1; m = 0; }
+    }
+    var gl = wave.gl;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, wave.tex[wave.cur]);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, wave.tex[1 - wave.cur]);
+    gl.uniform2f(wave.u.uRes, gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(wave.u.uTime, wave.t);
+    gl.uniform1f(wave.u.uScale, wave.scale);
+    gl.uniform1f(wave.u.uAngle, wave.angle);
+    gl.uniform1f(wave.u.uChaos, wave.chaos);
+    gl.uniform1f(wave.u.uZoom, wave.zoom);
+    gl.uniform1f(wave.u.uMix, m);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /* ================= Волны 2 (бета): больше линий, крупные хаотичные вихри и складки; доминирующие цвета обложки получают больше места ================= */
+  var w2 = { gl: null, tex: [null, null], cur: 0, mixStart: -1, t: 0, last: performance.now(),
+             speed: 1, scale: 2.2, chaos: 1.2, zoom: 1, angle: 55 * Math.PI / 180, dom: 0.6, ok: false, u: {} };
+
+  // Палитра с приоритетом: ширина цвета ~ его доля на обложке в степени (1 + 3*dom); редкие цвета остаются, но тонкими полосками (минимум 2.5%)
+  function w2Weighted(pal) {
+    var e = 1 + w2.dom * 3, s = 0, a = pal.map(function (p) {
+      var w = Math.pow(Math.max(p.w, 1e-4), e); s += w; return { c: p.c, w: w };
+    });
+    a.forEach(function (p) { p.w /= s; });
+    var FL = 0.025, low = a.filter(function (p) { return p.w < FL; }), hi = a.filter(function (p) { return p.w >= FL; });
+    if (low.length && hi.length) {
+      var hs = 0; hi.forEach(function (p) { hs += p.w; });
+      var room = 1 - low.length * FL;
+      hi.forEach(function (p) { p.w = p.w / hs * room; });
+      low.forEach(function (p) { p.w = FL; });
+    }
+    return a;
+  }
+
+  function w2Resize() {
+    var c = $('waves2');
+    c.width  = Math.max(2, Math.floor((innerWidth + 160) * 0.7));
+    c.height = Math.max(2, Math.floor((innerHeight + 160) * 0.7));
+    if (w2.gl) w2.gl.viewport(0, 0, c.width, c.height);
+  }
+
+  function w2Upload(i, bytes) {
+    var gl = w2.gl;
+    gl.bindTexture(gl.TEXTURE_2D, w2.tex[i]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+  }
+
+  function w2SetPalette(pal) {
+    if (!w2.ok || !pal || !pal.length) return;
+    if (w2.mixStart >= 0) w2.cur = 1 - w2.cur;
+    var weighted = w2Weighted(pal);
+    w2Upload(1 - w2.cur, state.wavePalMode === 'v1' ? buildPaletteBytes(weighted) : buildWavePaletteBytes(weighted));
+    w2.mixStart = performance.now();
+  }
+
+  function initWaves2() {
+    var c = $('waves2');
+    var gl = c.getContext('webgl', { antialias: false, alpha: false });
+    if (!gl) return;
+    var vs = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
+    var fs = `
+precision highp float;
+uniform vec2 uRes;
+uniform float uTime, uScale, uMix, uAngle, uChaos, uZoom;
+uniform sampler2D uCur, uNew;
+
+float hash(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++){
+    v += a * vnoise(p);
+    p = p * 2.03 + vec2(17.1, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+vec3 pal(float s){
+  return mix(texture2D(uCur, vec2(s, 0.5)).rgb, texture2D(uNew, vec2(s, 0.5)).rgb, uMix);
+}
+
+void main(){
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y * 1.9 * uZoom;
+  float t = uTime, C = uChaos;
+
+  // крупные вихри: четыре медленно плавающих центра закручивают поле, получаются большие петли и воронки
+  for (int i = 0; i < 4; i++){
+    float fi = float(i);
+    vec2 c = vec2(sin(t * 0.031 + fi * 1.9 + 0.7), cos(t * 0.027 + fi * 2.3 + 1.1)) * 1.1 * uZoom;
+    vec2 d = p - c;
+    float r2 = dot(d, d) / (uZoom * uZoom);
+    float a = C * 1.1 * exp(-r2 * 0.5) * sin(t * 0.05 + fi * 1.7 + 0.3);
+    p = c + rot(a) * d;
+  }
+
+  // двойное искажение шумом: крупные и средние хаотичные изгибы
+  vec2 q = p;
+  q += C * 0.55 * (vec2(fbm(q * 0.55 + vec2(t * 0.020, 3.1)), fbm(q * 0.55 + vec2(9.7, t * 0.017))) - 0.5) * 2.0;
+  q += C * 0.28 * (vec2(fbm(q * 1.3 + vec2(-t * 0.030, 1.7)), fbm(q * 1.3 + vec2(4.4, t * 0.026))) - 0.5) * 2.0;
+
+  vec2 dir = vec2(cos(uAngle), sin(uAngle));
+  vec2 nrm = vec2(sin(uAngle), -cos(uAngle));
+  float x = dot(q, nrm);
+  float y = dot(q, dir) * 0.6;
+  x += 0.30 * sin(1.7 * y + 1.1 * x + t * 0.11);
+  y += 0.30 * sin(1.3 * x - 0.8 * y - t * 0.09 + 2.0);
+  x += 0.20 * sin(3.1 * y + 2.0 * x - t * 0.15 + 4.0);
+  float f = x + 0.12 * sin(5.0 * x + 1.3 * y + t * 0.18);
+
+  // неравномерный шаг линий: где-то густо, где-то широкие полосы одного цвета
+  float big = fbm(vec2(f * 0.35, y * 0.35) + vec2(t * 0.012, 7.0)) - 0.5;
+  float s = f * 2.2 * uScale
+          + C * 1.2 * big
+          + C * 0.8 * (fbm(q * 0.4 + 13.0) - 0.5)
+          + t * 0.03;
+  vec3 c = pal(s);
+
+  // тонкие блики и тёмные линии
+  float ph = s * 6.2831853;
+  float br = pow(0.5 + 0.5 * sin(ph * 2.0 + 0.7), 48.0);
+  float dk = pow(0.5 + 0.5 * sin(ph * 3.0 + 2.1), 70.0);
+  br *= clamp(smoothstep(0.30, 0.70, fbm(vec2(f * 2.2, y * 1.4) + 20.0)) * 1.6, 0.0, 1.0);
+  dk *= 0.5 + 0.5 * smoothstep(0.30, 0.70, fbm(vec2(f * 2.7 + 40.0, y * 1.1)));
+  vec3 col = mix(c, mix(c, vec3(1.0), 0.55), br * 0.55);
+  col *= 1.0 - 0.7 * dk;
+
+  float L = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(col, vec3(1.0), smoothstep(0.8, 1.0, L) * 0.4);
+  float v = smoothstep(1.6, 0.4, length(gl_FragCoord.xy / uRes - 0.5) * 1.9);
+  col *= 0.88 + 0.12 * v;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+    function sh(type, src) {
+      var o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o);
+      return gl.getShaderParameter(o, gl.COMPILE_STATUS) ? o : null;
+    }
+    var v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+    if (!v || !f) return;
+    var prog = gl.createProgram();
+    gl.attachShader(prog, v); gl.attachShader(prog, f); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+    gl.useProgram(prog);
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    for (var i = 0; i < 2; i++) {
+      var tx = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      w2.tex[i] = tx;
+    }
+    ['uRes', 'uTime', 'uScale', 'uMix', 'uAngle', 'uChaos', 'uZoom', 'uCur', 'uNew'].forEach(function (n) { w2.u[n] = gl.getUniformLocation(prog, n); });
+    gl.uniform1i(w2.u.uCur, 0);
+    gl.uniform1i(w2.u.uNew, 1);
+    w2.gl = gl; w2.ok = true;
+    var b0 = buildPaletteBytes(w2Weighted(state.palette));
+    w2Upload(0, b0); w2Upload(1, b0);
+    w2Resize();
+    window.addEventListener('resize', w2Resize);
+  }
+
+  function drawWaves2(now) {
+    var dt = Math.min(0.1, (now - w2.last) / 1000);
+    w2.last = now;
+    w2.t += dt * w2.speed;
+    var m = 0;
+    if (w2.mixStart >= 0) {
+      m = Math.min(1, (now - w2.mixStart) / 1800);
+      if (m >= 1) { w2.cur = 1 - w2.cur; w2.mixStart = -1; m = 0; }
+    }
+    var gl = w2.gl;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, w2.tex[w2.cur]);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, w2.tex[1 - w2.cur]);
+    gl.uniform2f(w2.u.uRes, gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(w2.u.uTime, w2.t);
+    gl.uniform1f(w2.u.uScale, w2.scale);
+    gl.uniform1f(w2.u.uAngle, w2.angle);
+    gl.uniform1f(w2.u.uChaos, w2.chaos);
+    gl.uniform1f(w2.u.uZoom, w2.zoom);
+    gl.uniform1f(w2.u.uMix, m);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /* ================= Волны 3: плавные шёлковые завихрения из обложки (без ряби, оригинальный 2D-вихревой поток) ================= */
+  var w3 = { gl: null, tex: [null, null], cur: 0, mixStart: -1, t: 0, last: performance.now(),
+             speed: 1.0, scale: 3.2, strength: 0.65, angle: 35 * Math.PI / 180, bright: 0.88, ok: false, u: {}, hasCover: false };
+
+  function w3Resize() {
+    var c = $('waves3'); if (!c) return;
+    c.width  = Math.max(2, Math.floor((innerWidth + 160) * 0.65));
+    c.height = Math.max(2, Math.floor((innerHeight + 160) * 0.65));
+    if (w3.gl) w3.gl.viewport(0, 0, c.width, c.height);
+  }
+
+  function w3UploadCanvas(i, srcCanvas) {
+    var gl = w3.gl; if (!gl) return;
+    gl.bindTexture(gl.TEXTURE_2D, w3.tex[i]);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, srcCanvas);
+  }
+
+  function w3FallbackCanvas() {
+    var cv = document.createElement('canvas'); cv.width = cv.height = 512;
+    var x = cv.getContext('2d'), pal = state.palette || [{ c: [18, 18, 28], w: 0.5 }, { c: [70, 70, 110], w: 0.5 }];
+    var g = x.createLinearGradient(0, 0, 512, 512);
+    pal.forEach(function (p, idx) {
+      var stop = pal.length > 1 ? idx / (pal.length - 1) : 0;
+      g.addColorStop(stop, 'rgb(' + Math.round(p.c[0]) + ',' + Math.round(p.c[1]) + ',' + Math.round(p.c[2]) + ')');
+    });
+    x.fillStyle = g; x.fillRect(0, 0, 512, 512);
+    return cv;
+  }
+
+  function w3SetCover(img) {
+    if (!w3.ok || !img) return;
+    try {
+      // предсглаживаем обложку (blur 10px), чтобы мелкие детали/текст не создавали рябь в глазах
+      var S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+      var x = cv.getContext('2d');
+      x.imageSmoothingQuality = 'high';
+      x.filter = 'blur(8px) saturate(1.12)';
+      var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, im = Math.min(iw, ih);
+      if (!im) return;
+      x.drawImage(img, (iw - im) / 2, (ih - im) / 2, im, im, -16, -16, S + 32, S + 32);
+      if (w3.mixStart >= 0) w3.cur = 1 - w3.cur;
+      w3UploadCanvas(1 - w3.cur, cv);
+      w3.mixStart = performance.now();
+      w3.hasCover = true;
+    } catch (e) { /* CORS fallback: leave previous texture */ }
+  }
+
+  function initWaves3() {
+    var c = $('waves3');
+    var gl = c.getContext('webgl', { antialias: false, alpha: false });
+    if (!gl) return;
+    var vs = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
+    var fs = `
+precision highp float;
+uniform vec2 uRes;
+uniform float uTime, uScale, uStrength, uAngle, uMix, uBright;
+uniform sampler2D uCur, uNew;
+
+mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float asp = uRes.x / max(uRes.y, 1.0);
+  vec2 p = uv - 0.5;
+  if (asp > 1.0) p.x *= asp;
+  else p.y /= asp;
+
+  float t = uTime;
+  // два медленных плавающих вихря закручивают поток в широкие дуги
+  vec2 c1 = vec2(sin(t * 0.37) * 0.35, cos(t * 0.29) * 0.28);
+  vec2 d1 = p - c1;
+  p = c1 + rot(uStrength * 0.85 * exp(-dot(d1, d1) * 1.35) * sin(t * 0.41 + 0.6)) * d1;
+
+  vec2 c2 = vec2(cos(t * 0.23 + 2.1) * 0.38, sin(t * 0.31 + 1.4) * 0.32);
+  vec2 d2 = p - c2;
+  p = c2 + rot(-uStrength * 0.70 * exp(-dot(d2, d2) * 1.15) * cos(t * 0.33 + 1.2)) * d2;
+
+  // плавное многоволновое течение вдоль и поперёк выбранного угла
+  vec2 dir = vec2(cos(uAngle), sin(uAngle));
+  vec2 nrm = vec2(-dir.y, dir.x);
+  float along = dot(p, dir);
+  float across = dot(p, nrm);
+
+  float w1 = sin(along * uScale + t * 1.1 + 0.55 * sin(across * uScale * 0.55 - t * 0.65));
+  float w2 = cos(across * uScale * 0.72 - t * 0.85 + 0.45 * sin(along * uScale * 0.45 + t * 0.5));
+
+  vec2 sampleUV = p + 0.5 + (nrm * w1 * 0.55 + dir * w2 * 0.32) * uStrength;
+  vec3 a = texture2D(uCur, sampleUV).rgb;
+  vec3 b = texture2D(uNew, sampleUV).rgb;
+  vec3 col = mix(a, b, uMix) * uBright;
+
+  // мягкое затемнение краёв для комфорта глаз и читаемости текста
+  float v = smoothstep(1.38, 0.22, length(uv - 0.5) * 1.45);
+  col *= 0.84 + 0.16 * v;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+    function sh(type, src) {
+      var o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o);
+      return gl.getShaderParameter(o, gl.COMPILE_STATUS) ? o : null;
+    }
+    var v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+    if (!v || !f) return;
+    var prog = gl.createProgram();
+    gl.attachShader(prog, v); gl.attachShader(prog, f); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+    gl.useProgram(prog);
+
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    for (var i = 0; i < 2; i++) {
+      var tx = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+      w3.tex[i] = tx;
+    }
+    ['uRes', 'uTime', 'uScale', 'uStrength', 'uAngle', 'uMix', 'uBright', 'uCur', 'uNew'].forEach(function (n) { w3.u[n] = gl.getUniformLocation(prog, n); });
+    gl.uniform1i(w3.u.uCur, 0);
+    gl.uniform1i(w3.u.uNew, 1);
+
+    w3.gl = gl; w3.ok = true;
+    var fb = w3FallbackCanvas();
+    w3UploadCanvas(0, fb); w3UploadCanvas(1, fb);
+    $('waves3').style.filter = 'blur(5.4px)';
+    w3Resize();
+    window.addEventListener('resize', w3Resize);
+  }
+
+  function drawWaves3(now) {
+    var dt = Math.min(0.1, (now - w3.last) / 1000);
+    w3.last = now;
+    w3.t += dt * 0.14 * w3.speed;
+    var m = 0;
+    if (w3.mixStart >= 0) {
+      m = Math.min(1, (now - w3.mixStart) / 1800);
+      if (m >= 1) { w3.cur = 1 - w3.cur; w3.mixStart = -1; m = 0; }
+    }
+    var gl = w3.gl;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, w3.tex[w3.cur]);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, w3.tex[1 - w3.cur]);
+    gl.uniform2f(w3.u.uRes, gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(w3.u.uTime, w3.t);
+    gl.uniform1f(w3.u.uScale, w3.scale);
+    gl.uniform1f(w3.u.uStrength, w3.strength);
+    gl.uniform1f(w3.u.uAngle, w3.angle);
+    gl.uniform1f(w3.u.uMix, m);
+    gl.uniform1f(w3.u.uBright, w3.bright);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /* ================= Мыльные пятна: жидкий узор + сильное размытие + зерно ================= */
+  var blobs = { gl: null, tex: [null, null], cur: 0, mixStart: -1, t: 0, last: performance.now(),
+                speed: 1, size: 1, ok: false, u: {}, grain: 0.5, grainTick: 0 };
+
+  function blobsResize() {
+    var c = $('blobs'); if (!c) return;
+    c.width  = Math.max(2, Math.floor((innerWidth + 160) * 0.5));
+    c.height = Math.max(2, Math.floor((innerHeight + 160) * 0.5));
+    if (blobs.gl) blobs.gl.viewport(0, 0, c.width, c.height);
+  }
+
+  function makeGrain() {
+    var n = document.createElement('canvas'); n.width = n.height = 256;
+    var x = n.getContext('2d'), im = x.createImageData(256, 256), d = im.data;
+    for (var i = 0; i < d.length; i += 4) {
+      var v = Math.random() < 0.5 ? 0 : 255;
+      d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = Math.random() * 80;
+    }
+    x.putImageData(im, 0, 0);
+    $('grain').style.backgroundImage = 'url(' + n.toDataURL() + ')';
+  }
+
+  function initBlobs() {
+    makeGrain();
+    var c = $('blobs');
+    var gl = c.getContext('webgl', { antialias: false, alpha: false });
+    if (!gl) return;
+    var vs = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
+    var fs = `
+precision highp float;
+uniform vec2 uRes;
+uniform float uTime, uSize, uMix;
+uniform sampler2D uCur, uNew;
+
+float hash(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++){
+    v += a * vnoise(p);
+    p = p * 2.02 + vec2(17.1, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+vec3 pal(float s){
+  return mix(texture2D(uCur, vec2(s, 0.5)).rgb, texture2D(uNew, vec2(s, 0.5)).rgb, uMix);
+}
+
+void main(){
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y * (2.1 / uSize);
+  float t = uTime;
+
+  // жидкое течение: двойное искажение шума
+  vec2 q = vec2(fbm(p + vec2(0.0, t * 0.05)), fbm(p + vec2(5.2, 1.3) - vec2(t * 0.04, 0.0)));
+  vec2 r = vec2(fbm(p + 3.0 * q + vec2(1.7, 9.2) + t * 0.06),
+                fbm(p + 3.0 * q + vec2(8.3, 2.8) - t * 0.05));
+  float f = fbm(p + 3.2 * r);
+
+  // цвет тела: палитра обложки по полю f
+  float s = f * 1.7 + t * 0.01;
+  vec3 body = pal(s);
+  body *= 0.30 + 0.70 * smoothstep(0.25, 0.80, f);
+
+  // яркие «неоновые» складки, как у жидкого мрамора (после размытия превращаются в свечение)
+  float g = abs(fract(f * 4.0 + length(q) * 0.8 + t * 0.015) - 0.5) * 2.0;
+  float streak = pow(1.0 - g, 9.0) * smoothstep(0.30, 0.65, f);
+  vec3 hi = mix(pal(s + 0.12), vec3(1.0), 0.30);
+
+  vec3 col = body + hi * streak * 1.1;
+  float v = smoothstep(1.7, 0.3, length(p) * uSize / 2.1);
+  col *= 0.80 + 0.20 * v;
+  col += (hash(gl_FragCoord.xy + t) - 0.5) / 128.0;     // дизеринг против полос
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+    function sh(type, src) {
+      var o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o);
+      return gl.getShaderParameter(o, gl.COMPILE_STATUS) ? o : null;
+    }
+    var v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+    if (!v || !f) return;
+    var prog = gl.createProgram();
+    gl.attachShader(prog, v); gl.attachShader(prog, f); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+    gl.useProgram(prog);
+
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    for (var i = 0; i < 2; i++) {
+      var tx = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      blobs.tex[i] = tx;
+    }
+    ['uRes', 'uTime', 'uSize', 'uMix', 'uCur', 'uNew'].forEach(function (n) { blobs.u[n] = gl.getUniformLocation(prog, n); });
+    gl.uniform1i(blobs.u.uCur, 0);
+    gl.uniform1i(blobs.u.uNew, 1);
+    blobs.gl = gl; blobs.ok = true;
+    blobsUpload(0, buildPaletteBytes(state.palette));
+    blobsUpload(1, buildPaletteBytes(state.palette));
+    blobsResize();
+    window.addEventListener('resize', blobsResize);
+  }
+
+  function blobsUpload(i, bytes) {
+    var gl = blobs.gl;
+    gl.bindTexture(gl.TEXTURE_2D, blobs.tex[i]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+  }
+
+  // плавная смена палитры при новой обложке (как у волн)
+  function blobsSetPalette(pal) {
+    if (!blobs.ok || !pal || !pal.length) return;
+    if (blobs.mixStart >= 0) blobs.cur = 1 - blobs.cur;
+    blobsUpload(1 - blobs.cur, buildPaletteBytes(pal));
+    blobs.mixStart = performance.now();
+  }
+
+  function drawBlobs(now) {
+    if (!blobs.ok) return;
+    var dt = Math.min(0.1, (now - blobs.last) / 1000);
+    blobs.last = now;
+    blobs.t += dt * blobs.speed;
+
+    var m = 0;
+    if (blobs.mixStart >= 0) {
+      m = Math.min(1, (now - blobs.mixStart) / 1800);
+      if (m >= 1) { blobs.cur = 1 - blobs.cur; blobs.mixStart = -1; m = 0; }
+    }
+    var gl = blobs.gl;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, blobs.tex[blobs.cur]);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blobs.tex[1 - blobs.cur]);
+    gl.uniform2f(blobs.u.uRes, gl.canvas.width, gl.canvas.height);
+    gl.uniform1f(blobs.u.uTime, blobs.t);
+    gl.uniform1f(blobs.u.uSize, blobs.size);
+    gl.uniform1f(blobs.u.uMix, m);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // живое зерно: сдвигаем текстуру шума ~12 раз в секунду
+    if (now - blobs.grainTick > 80) {
+      blobs.grainTick = now;
+      $('grain').style.backgroundPosition = ((Math.random() * 256) | 0) + 'px ' + ((Math.random() * 256) | 0) + 'px';
+    }
+  }
+
+
+  /* ================= Звёздный полёт: звёзды летят на экран, скорость и количество растут с громкостью и насыщенностью трека ================= */
+  var stars = { speed: 1, n: 700, react: 1, size: 1, cmode: 'white', e: 0, last: performance.now(), pool: [], ctx: null,
+                tgt: [[255, 255, 255]], cur: [[255, 255, 255]] };
+  function newStar(init) {
+    var x, y;
+    do { x = (Math.random() * 2 - 1) * 1.75; y = (Math.random() * 2 - 1) * 1.05; } while (Math.sqrt(x * x + y * y) < 0.15);   // не прямо в центре
+    return { x: x, y: y, z: init ? 0.04 + Math.random() * 0.96 : 1, c: Math.random(), s: 0.6 + Math.random() * 0.8 };
+  }
+  for (var si = 0; si < 2000; si++) stars.pool.push(newStar(true));
+  function starsResize() { var c = $('stars'); c.width = innerWidth; c.height = innerHeight; }
+  starsResize(); window.addEventListener('resize', starsResize);
+  stars.ctx = $('stars').getContext('2d');
+
+  // цвета звёзд из палитры обложки (тёмные нейтральные пропускаем, остальные чуть светлее)
+  function starsSetColors() {
+    var pal = (state.palette || []).filter(function (e) { var hv = rgb2hsv(e.c[0], e.c[1], e.c[2]); return hv[1] > 0.2 || lumOf(e.c) > 0.45; });
+    if (!pal.length) pal = (state.palette || []).slice();
+    if (!pal.length) return;
+    pal.sort(function (a, b) { return b.w - a.w; });
+    stars.tgt = pal.slice(0, 6).map(function (e) { return vivid(e.c).map(function (t) { return t + (255 - t) * 0.3; }); });
+    while (stars.cur.length < stars.tgt.length) stars.cur.push(stars.tgt[stars.cur.length].slice());
+    stars.cur.length = stars.tgt.length;
+  }
+
+  function drawStars(now) {
+    var dt = Math.min(0.1, (now - stars.last) / 1000); stars.last = now;
+    // «энергия» трека: средняя громкость по спектру + бас (быстро растёт, медленно спадает)
+    var sum = 0, bass = 0, i, j;
+    for (i = 0; i < 48; i++) { var tv = Math.min(1, Math.pow(eq.raw[i] * 1.8, 0.8)); sum += tv; if (i < 8) bass += tv; }
+    var tg = Math.min(1, sum / 48 * 1.6 + bass / 8 * 0.5);
+    stars.e += (tg - stars.e) * (1 - Math.exp(-dt * (tg > stars.e ? 10 : 1.5)));
+    var e = Math.min(1, stars.e * stars.react);
+
+    var c = $('stars'), x = stars.ctx, W = c.width, H = c.height, cx = W / 2, cy = H / 2, kf = Math.min(W, H) * 0.5;
+    var av = state.avg, gl = 0.10 + 0.22 * e, g = x.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
+    g.addColorStop(0, 'rgb(' + Math.round(4 + av[0] * gl) + ',' + Math.round(5 + av[1] * gl) + ',' + Math.round(9 + av[2] * gl) + ')');
+    g.addColorStop(1, 'rgb(3,4,10)');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+
+    var v = (0.05 + 0.85 * e) * stars.speed;          // скорость полёта (глубина в секунду)
+    var act = stars.n * (0.2 + 0.8 * e);              // сколько звёзд видно
+    for (i = 0; i < stars.cur.length; i++) for (j = 0; j < 3; j++) stars.cur[i][j] += (stars.tgt[i][j] - stars.cur[i][j]) * 0.05;
+    x.lineCap = 'round'; x.strokeStyle = '#fff';
+    var P = stars.pool, n = Math.min(P.length, Math.ceil(stars.n));
+    for (i = 0; i < n; i++) {
+      var s = P[i], sp = v * (0.6 + s.s * 0.5);
+      s.z -= sp * dt;
+      if (s.z < 0.03) { P[i] = newStar(false); continue; }
+      var a = Math.min(1, Math.max(0, act - i)); if (a <= 0) continue;      // звёзды появляются плавно
+      var z0 = Math.min(1.6, s.z + sp * 0.05), px = cx + s.x * kf / s.z, py = cy + s.y * kf / s.z;
+      if (px < -50 || px > W + 50 || py < -50 || py > H + 50) { P[i] = newStar(false); continue; }
+      var qx = cx + s.x * kf / z0, qy = cy + s.y * kf / z0, depth = 1 - s.z;
+      x.globalAlpha = a * Math.min(1, depth * 2.2) * 0.95;
+      x.lineWidth = (0.5 + depth * 2.6) * stars.size * s.s;
+      if (stars.cmode === 'cover') { var cc = stars.cur[Math.floor(s.c * stars.cur.length) % stars.cur.length]; x.strokeStyle = 'rgb(' + Math.round(cc[0]) + ',' + Math.round(cc[1]) + ',' + Math.round(cc[2]) + ')'; }
+      x.beginPath(); x.moveTo(qx, qy); x.lineTo(px, py); x.stroke();
+    }
+    x.globalAlpha = 1;
+  }
+
+
+  /* ================= Своя картинка в качестве фона ================= */
+  var bgimg = { path: '', key: null, token: 0, fit: 'cover', blur: 0, bright: 1, sat: 1, lum: 0.15 };
+  // Wallpaper Engine может отдать путь по-разному (C:\...\pic.png, file:///..., относительный) — пробуем несколько вариантов по очереди
+  function imgCandidates(v) {
+    v = String(v || '').trim();
+    if (!v) return [];
+    if (/^(file|https?|data|blob):/i.test(v)) return [v];
+    var out = [];
+    if (typeof window.slwLocalFileUrl === 'function') out.push(window.slwLocalFileUrl(v));
+    var norm = v.replace(/\\/g, '/');
+    var p = norm.replace(/^\/+/, ''), enc = encodeURI(p).replace(/#/g, '%23').replace(/\?/g, '%3F');
+    out.push('file:///' + enc, 'file:///' + p, enc, p);
+    return out.filter(function (u, i) { return out.indexOf(u) === i; });
+  }
+  function applyBgImage() {
+    var el = $('bgimg'), f = [];
+    if (bgimg.blur > 0) f.push('blur(' + bgimg.blur + 'px)');
+    f.push('brightness(' + bgimg.bright + ')', 'saturate(' + bgimg.sat + ')');
+    el.style.filter = f.join(' ');
+    el.style.backgroundSize = bgimg.fit === 'contain' ? 'contain' : bgimg.fit === 'stretch' ? '100% 100%' : 'cover';
+    if (bgimg.path === bgimg.key) { applyTheme(); return; }      // сменились только размытие/яркость — картинку не перегружаем
+    bgimg.key = bgimg.path;
+    var cands = imgCandidates(bgimg.path), token = ++bgimg.token;
+    if (!cands.length) { el.style.backgroundImage = 'none'; bgimg.lum = 0.15; dbg('🖼 Картинка фона не выбрана', 'warn'); applyTheme(); return; }
+    dbg('🖼 Картинка фона: путь от Wallpaper Engine — ' + bgimg.path, '');
+    (function next(i) {
+      if (token !== bgimg.token) return;
+      if (i >= cands.length) { dbg('🖼 Не удалось загрузить картинку фона (пробовал вариантов пути: ' + cands.length + ')', 'err'); return; }
+      var im = new Image();
+      im.onload = function () {
+        if (token !== bgimg.token) return;
+        el.style.backgroundImage = 'url("' + cands[i].replace(/"/g, '%22') + '")';
+        dbg('🖼 Картинка фона загружена: ' + im.naturalWidth + '×' + im.naturalHeight, 'ok');
+        try {                                       // средняя яркость картинки — чтобы текст был читаемым на светлых картинках
+          var cv = document.createElement('canvas'); cv.width = cv.height = 24;
+          var cx = cv.getContext('2d'); cx.drawImage(im, 0, 0, 24, 24);
+          var d = cx.getImageData(0, 0, 24, 24).data, s = 0;
+          for (var k = 0; k < d.length; k += 4) s += (0.299 * d[k] + 0.587 * d[k + 1] + 0.114 * d[k + 2]) / 255;
+          bgimg.lum = s / (d.length / 4);
+        } catch (e) { bgimg.lum = 0.2; }
+        applyTheme();
+      };
+      im.onerror = function () { next(i + 1); };
+      im.src = cands[i];
+    })(0);
+  }
+
+  /* ================= Текст песни (LRCLIB) ================= */
+  function artistMatches(name) {
+    var na = norm(state.meta.artist).split(' ')[0] || '', ra = norm(name);
+    return !na || ra.indexOf(na) >= 0 || (ra && na.indexOf(ra) >= 0);
+  }
+  function durOK(it) {
+    return !state.duration || Math.abs((it.duration || 0) - state.duration) <= 10;
+  }
+
+  function loadLyrics() {
+    var token = ++state.fetchToken, m = state.meta;
+    if (!m.title) return;
+    var queries = [
+      { q: 'track_name=' + enc(m.title) + '&artist_name=' + enc(m.artist), loose: false },
+      { q: 'track_name=' + enc(m.title.replace(/\s+-\s+.*$/, '')) + '&artist_name=' + enc(m.artist), loose: false },
+      { q: 'q=' + enc((m.artist + ' ' + m.title).trim()), loose: true },
+      { q: 'track_name=' + enc(m.title), loose: true }
+    ];
+    var netErr = false;
+    (function next(i) {
+      if (token !== state.fetchToken) return;
+      if (i >= queries.length) { finishLyrics(token, netErr); return; }
+      getJSON('https://lrclib.net/api/search?' + queries[i].q, false)
+        .then(function (list) {
+          if (token !== state.fetchToken) return;
+          var c = (list || []).filter(function (it) {
+            return it.syncedLyrics && (!queries[i].loose || artistMatches(it.artistName));
+          });
+          if (c.some(durOK)) { state.cand = c; finishLyrics(token, false); }
+          else next(i + 1);
+        })
+        .catch(function () { netErr = true; next(i + 1); });
+    })(0);
+  }
+
+  function pickLyrics() {
+    var best = null, bd = Infinity;
+    state.cand.forEach(function (it) {
+      if (!durOK(it)) return;
+      var d = state.duration ? Math.abs((it.duration || 0) - state.duration) : 0;
+      if (d < bd) { bd = d; best = it; }
+    });
+    if (!best) {
+      if (state.lyricId !== 'none') { state.lyricId = 'none'; setMessage('notfound'); }
+      return;
+    }
+    if (best.id !== state.lyricId) { state.lyricId = best.id; setLyrics(parseLRC(best.syncedLyrics)); }
+  }
+
+  function finishLyrics(token, netErr) {
+    if (token !== state.fetchToken) return;
+    if (state.cand.length) pickLyrics();
+    else setMessage(netErr ? 'neterr' : 'notfound');
+    if (state.lyricsState === 'found') dbg('📝 Текст найден: ' + state.lyrics.length + ' строк', 'ok');
+    else dbg(netErr && !state.cand.length ? '📝 Не удалось загрузить текст (нет связи с LRCLIB)' : '📝 Синхронный текст не найден', netErr && !state.cand.length ? 'err' : 'warn');
+    change.lyricsOk = true;
+    checkChangeDone();
+  }
+
+  function parseLRC(text) {
+    var out = [];
+    text.split(/\r?\n/).forEach(function (raw) {
+      var re = /\[(\d+):(\d+(?:\.\d+)?)\]/g, m, times = [];
+      while ((m = re.exec(raw))) times.push(parseInt(m[1], 10) * 60 + parseFloat(m[2]));
+      var line = raw.replace(/\[[^\]]*\]/g, '').trim();
+      times.forEach(function (t) { out.push({ t: t, text: line }); });
+    });
+    out.sort(function (a, b) { return a.t - b.t; });
+    return out;
+  }
+
+  function setMessage(msg) {
+    state.msgKey = msg;
+    state.lyricsState = (msg === 'searching') ? 'unknown' : 'none';
+    state.lyrics = []; state.lineEls = []; state.activeIdx = -2;
+    trackEl.style.transform = 'translateY(0)';
+    trackEl.innerHTML = msg ? '<div class="msg"></div>' : '';
+    if (msg) trackEl.firstChild.textContent = T(msg);
+  }
+
+  function setLyrics(lines) {
+    if (!lines.length) { setMessage('notfound'); return; }
+    state.lyricsState = 'found'; state.msgKey = '';
+    state.lyrics = lines; state.activeIdx = -2; state.revIdx = -99;
+    trackEl.innerHTML = '';
+    state.lineEls = lines.map(function (l) {
+      var d = document.createElement('div');
+      d.className = 'line';
+      if (lyricMode === 'classic') d.textContent = l.text || '♪'; else buildChars(d, l.text || '♪');
+      trackEl.appendChild(d);
+      return d;
+    });
+  }
+
+  /* ================= Побуквенный показ текста: «Печать» (с курсором) и «Буквы плавно» ================= */
+  // строка собирается из слов и букв: слова не разваливаются при переносе, а раскладка не прыгает, пока буквы ещё не показаны
+  function buildChars(d, txt) {
+    d._ch = []; d._shown = 0; d._cur = null;
+    txt.split(/(\s+)/).forEach(function (w) {
+      if (!w) return;
+      if (/^\s+$/.test(w)) { d.appendChild(document.createTextNode(' ')); return; }
+      var ws = document.createElement('span');
+      ws.className = 'w' + (w.length > 18 ? ' long' : '');        // длинные куски без пробелов (например, китайский) могут переноситься
+      Array.from(w).forEach(function (ch) {
+        var s = document.createElement('span'); s.className = 'c'; s.textContent = ch;
+        ws.appendChild(s); d._ch.push(s);
+      });
+      d.appendChild(ws);
+    });
+  }
+  function setReveal(i, count) {
+    var d = state.lineEls[i], ch = d && d._ch;
+    if (!ch) return;
+    var n = ch.length, c = Math.max(0, Math.min(count, n)), cur = d._shown || 0, k;
+    if (c === cur) return;
+    if (c > cur) for (k = cur; k < c; k++) ch[k].classList.add('on');
+    else for (k = c; k < cur; k++) ch[k].classList.remove('on');
+    d._shown = c;
+  }
+  // «играющее сейчас» слово (стиль Apple Music): активное слово слегка приподнимается с мягким свечением,
+  // а уже спетые слова/буквы остаются приподнятыми выше несыгранных
+  function setNow(i, count) {
+    var d = state.lineEls[i]; if (!d || !d._ch) return;
+    var activeWord = (count > 0 && d._ch[count - 1]) ? d._ch[count - 1].parentNode : null;
+    if (d._nw === activeWord && d._nc === count) return;
+    var k;
+    if (d._nw && d._nw !== activeWord) {
+      var prevCh = d._nw.children;
+      for (k = 0; k < prevCh.length; k++) prevCh[k].classList.remove('now');
+    }
+    if (activeWord) {
+      var curCh = activeWord.children;
+      for (k = 0; k < curCh.length; k++) {
+        curCh[k].classList.toggle('now', curCh[k].classList.contains('on'));
+      }
+    }
+    d._nw = activeWord; d._nc = count;
+  }
+  function setCursor(i, on) {
+    var d = state.lineEls[i]; if (!d || !d._ch) return;
+    var target = (on && d._shown > 0) ? d._ch[d._shown - 1] : null;
+    if (d._cur === target) return;                                // курсор переставляем только когда напечатана новая буква, иначе он не мигает
+    if (d._cur) d._cur.classList.remove('last');
+    d._cur = target;
+    if (target) target.classList.add('last');
+  }
+  function updateReveal(pos, idx) {
+    if (lyricMode === 'classic' || !state.lineEls.length || !state.lineEls[0]._ch) return;
+    var L = state.lyrics, i;
+    if (idx !== state.revIdx) {                                   // сменилась строка или была перемотка: прошлые строки показаны целиком, будущие скрыты
+      state.revIdx = idx;
+      for (i = 0; i < state.lineEls.length; i++) {
+        if (i === idx) continue;
+        setReveal(i, i < idx ? 1e9 : 0); setCursor(i, false); setNow(i, 0);
+      }
+    }
+    if (idx < 0) return;
+    var d = state.lineEls[idx], n = d._ch.length, t0 = L[idx].t, nxt = L[idx + 1] ? L[idx + 1].t : t0 + 5;
+    // строка «допечатывается» за долю своей длительности, но не медленнее ~6 букв в секунду
+    var dur = Math.max(0.3, nxt - t0) * typeFill, win = (lyricMode === 'karaoke' || lyricMode === 'jump' || lyricMode === 'karaoke_flat') ? dur : Math.min(dur, n * 0.16), p = win > 0 ? (pos - t0) / win : 1;
+    var cnt = p >= 1 ? n : Math.floor(Math.max(0, p) * n) + 1;
+    setReveal(idx, cnt);
+    setCursor(idx, lyricMode === 'typing' && cursorOn);
+    if (lyricMode === 'jump' || lyricMode === 'karaoke_flat') setNow(idx, p >= 1 ? 0 : cnt);
+  }
+  function applyLyricMode() {
+    var cl = document.documentElement.classList;
+    ['lm-typing', 'lm-letters', 'lm-typed', 'lm-karaoke', 'lm-jump', 'lm-flat'].forEach(function (n) { cl.remove(n); });
+    if (lyricMode === 'karaoke' || lyricMode === 'jump' || lyricMode === 'karaoke_flat') {
+      cl.add('lm-karaoke');
+      if (lyricMode === 'jump') cl.add('lm-jump');
+      if (lyricMode === 'karaoke_flat') cl.add('lm-flat');
+    }
+    else if (lyricMode !== 'classic') { cl.add('lm-typed'); cl.add('lm-' + lyricMode); }
+    if (state.lyricsState === 'found' && state.lyrics.length) setLyrics(state.lyrics);   // пересобираем строки под новый режим
+  }
+
+  /* ================= Новые фоны: размытая обложка, градиент как в Apple Music, снегопад ================= */
+  var blur = { px: 70, bright: 0.7, src: null, tm: 0 };
+  function applyBlurBg() { $('blurbg').style.filter = 'blur(' + blur.px + 'px) brightness(' + blur.bright + ') saturate(1.3)'; }
+  function updateBlurBg() {                          // обложка увеличена и размыта; при смене трека плавно гаснет и появляется новая
+    var el = $('blurbg'), s = coverEl.getAttribute('src') || '';
+    if (s === blur.src) return;
+    blur.src = s; el.style.opacity = 0; clearTimeout(blur.tm);
+    blur.tm = setTimeout(function () { el.style.backgroundImage = s ? 'url("' + s.replace(/"/g, '%22') + '")' : 'none'; el.style.opacity = 1; }, 350);
+  }
+
+  var mesh = { ctx: null, t: 0, last: performance.now(), speed: 1, size: 1, blur: 24, sat: 1.2, cur: [], tgt: [[40, 40, 70]], baseCur: [12, 12, 16], baseTgt: [12, 12, 16] };
+  function applyMeshFx() { $('mesh').style.filter = 'blur(' + mesh.blur + 'px) saturate(' + mesh.sat + ')'; }
+  function meshColors() {                            // цвета палитры обложки с сохранением настоящего чёрного/тёмного фона
+    var sorted = (state.palette || []).slice().sort(function (a, b) { return b.w - a.w; });
+    if (!sorted.length) return;
+    // если на обложке есть тёмный/чёрный фон — сохраняем его глубоким, не осветляем до серого
+    var darkest = sorted.reduce(function (best, e) { return lumOf(e.c) < lumOf(best.c) ? e : best; }, sorted[0]);
+    mesh.baseTgt = lumOf(darkest.c) < 0.22 ? darkest.c.slice() : state.avg.map(function (v) { return v * 0.35; });
+
+    var pal = sorted.slice(0, 6).map(function (e) {
+      var h = rgb2hsv(e.c[0], e.c[1], e.c[2]);
+      // тёмные/чёрные и нейтральные оттенки оставляем тёмными, яркие хроматические — насыщенными
+      if (h[1] < 0.20 || h[2] < 0.20) return e.c.slice();
+      return hsv2rgb(h[0], Math.min(1, h[1] * 1.18), Math.max(h[2], 0.55));
+    });
+    mesh.tgt = pal;
+    while (mesh.cur.length < pal.length) mesh.cur.push(pal[mesh.cur.length].slice());
+    mesh.cur.length = pal.length;
+  }
+  function drawMesh(now) {                           // сетка больших мягких цветных и тёмных пятен, медленно плывущих по экрану
+    var dt = Math.min(0.1, (now - mesh.last) / 1000); mesh.last = now; mesh.t += dt * mesh.speed;
+    var c = $('mesh'), x = mesh.ctx, W = c.width, H = c.height, t = mesh.t, n = mesh.cur.length, i, j;
+    if (!n) return;
+    for (j = 0; j < 3; j++) mesh.baseCur[j] += (mesh.baseTgt[j] - mesh.baseCur[j]) * 0.04;
+    for (i = 0; i < n; i++) for (j = 0; j < 3; j++) mesh.cur[i][j] += (mesh.tgt[i][j] - mesh.cur[i][j]) * 0.04;
+    x.fillStyle = 'rgb(' + Math.round(mesh.baseCur[0]) + ',' + Math.round(mesh.baseCur[1]) + ',' + Math.round(mesh.baseCur[2]) + ')';
+    x.fillRect(0, 0, W, H);
+    var R = Math.max(W, H) * 0.58 * mesh.size;
+    for (i = 0; i < 8; i++) {
+      var col = mesh.cur[i % n], cs = Math.round(col[0]) + ',' + Math.round(col[1]) + ',' + Math.round(col[2]);
+      var px = W * (0.5 + 0.42 * Math.sin(t * 0.13 * (1 + i * 0.21) + i * 2.1)), py = H * (0.5 + 0.42 * Math.cos(t * 0.11 * (1 + i * 0.17) + i * 1.3));
+      var gr = x.createRadialGradient(px, py, 0, px, py, R * (0.65 + 0.25 * Math.sin(t * 0.2 + i)));
+      gr.addColorStop(0, 'rgba(' + cs + ',.92)'); gr.addColorStop(1, 'rgba(' + cs + ',0)');
+      x.fillStyle = gr; x.fillRect(0, 0, W, H);
+    }
+  }
+
+  var snow = { ctx: null, n: 250, speed: 1, size: 1, wind: 0, fl: [], t: 0, last: performance.now() };
+  function newFlake(W, H, init) {
+    return { x: Math.random() * W, y: init ? Math.random() * H : -12, r: 0.8 + Math.random() * 2.4, v: 0.5 + Math.random() * 0.9, ph: Math.random() * 6.28, sw: 0.3 + Math.random() * 0.9, a: 0.45 + Math.random() * 0.55 };
+  }
+  function drawSnow(now) {
+    var dt = Math.min(0.1, (now - snow.last) / 1000); snow.last = now; snow.t += dt;
+    var c = $('snow'), x = snow.ctx, W = c.width, H = c.height, k = H / 1080, av = state.avg, i, f;
+    while (snow.fl.length < snow.n) snow.fl.push(newFlake(W, H, true));
+    var g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgb(' + Math.round(8 + av[0] * 0.28) + ',' + Math.round(10 + av[1] * 0.28) + ',' + Math.round(16 + av[2] * 0.28) + ')'); g.addColorStop(1, 'rgb(3,4,10)');
+    x.fillStyle = g; x.fillRect(0, 0, W, H); x.fillStyle = '#fff';
+    for (i = 0; i < snow.n; i++) {
+      f = snow.fl[i];
+      f.y += f.v * 70 * k * snow.speed * (0.5 + f.r * 0.3) * dt;
+      f.x += (Math.sin(snow.t * f.sw + f.ph) * 22 + snow.wind * 90 * (0.4 + f.r * 0.2)) * k * dt;
+      if (f.x < -20) f.x = W + 20; else if (f.x > W + 20) f.x = -20;
+      if (f.y > H + 12) { f.y = -12; f.x = Math.random() * W; }
+      x.globalAlpha = f.a; x.beginPath(); x.arc(f.x, f.y, f.r * k * snow.size, 0, 6.2832); x.fill();
+    }
+    x.globalAlpha = 1;
+  }
+
+  /* ================= Форма обложки, прогресс-бар и фитиль ================= */
+  var cov = { shape: 'rounded', r: 4, src: null, play: '' };
+  function applyShape() {
+    document.documentElement.style.setProperty('--cover-r', (cov.shape === 'rounded' ? cov.r : 50) + '%');
+    coverEl.style.visibility = cov.shape === 'vinyl' ? 'hidden' : '';       // у пластинки обложку рисует свой слой
+  }
+
+  var prog = { last: -1, dur: -1 };
+  function mmss(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function updateProg() {                            // возвращает долю проигранного (0..1) или -1, если прогресса нет
+    var el = $('prog'), on = progStyle !== 'none' && !!state.title && state.duration > 0;
+    if (!on) { if (el.style.display !== 'none') el.style.display = 'none'; return -1; }
+    if (el.style.display !== 'block') el.style.display = 'block';
+    var pos = Math.min(state.duration, Math.max(0, currentPos() - state.offset)), p = pos / state.duration, s = Math.floor(pos);
+    $('pfill').style.width = (p * 100).toFixed(2) + '%';
+    if (s !== prog.last) { prog.last = s; $('pcur').textContent = mmss(pos); }
+    if (state.duration !== prog.dur) { prog.dur = state.duration; $('pdur').textContent = mmss(state.duration); }
+    return p;
+  }
+
+  var fuse = { ctx: $('fuse').getContext('2d'), w: 5, fx: false, sp: [], last: performance.now() };
+  // контур вокруг обложки (скруглённый прямоугольник или круг), точки идут по часовой стрелке от середины верхней стороны
+  function fusePts(bx, by, bw, bh, rr) {
+    var pts = [], cx = bx + bw / 2, i, a, N = 14;
+    function line(x0, y0, x1, y1) { var n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 8)); for (i = 0; i < n; i++) pts.push([x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]); }
+    function arc(ax, ay, a0) { for (i = 0; i < N; i++) { a = a0 + Math.PI / 2 * i / N; pts.push([ax + rr * Math.cos(a), ay + rr * Math.sin(a)]); } }
+    line(cx, by, bx + bw - rr, by); arc(bx + bw - rr, by + rr, -Math.PI / 2);
+    line(bx + bw, by + rr, bx + bw, by + bh - rr); arc(bx + bw - rr, by + bh - rr, 0);
+    line(bx + bw - rr, by + bh, bx + rr, by + bh); arc(bx + rr, by + bh - rr, Math.PI / 2);
+    line(bx, by + bh - rr, bx, by + rr); arc(bx + rr, by + rr, Math.PI);
+    line(bx + rr, by, cx, by); pts.push([cx, by]);
+    return pts;
+  }
+  function drawFuse(now, r, p) {
+    var c = $('fuse'), x = fuse.ctx, dt = Math.min(0.1, (now - fuse.last) / 1000), i, k;
+    fuse.last = now;
+    x.clearRect(0, 0, c.width, c.height);
+    var fw = fuse.w, gap = fw * 1.4 + 6, bw = r.width + 2 * gap, bh = r.height + 2 * gap;
+    var cr = cov.shape === 'rounded' ? cov.r : 50, rr = Math.min(Math.min(bw, bh) / 2, cr / 100 * r.width + gap);
+    var pts = fusePts(r.left - gap, r.top - gap, bw, bh, rr), cum = [0];
+    for (i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    var s = p * cum[cum.length - 1];
+    k = 1; while (k < cum.length - 1 && cum[k] < s) k++;
+    var tt = Math.min(1, Math.max(0, (s - cum[k - 1]) / (cum[k] - cum[k - 1] || 1)));
+    var tx = pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * tt, ty = pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * tt;
+    var rest = [[tx, ty]].concat(pts.slice(k));      // непрогоревшая часть: от огонька до конца круга
+    function path(a) { x.beginPath(); x.moveTo(a[0][0], a[0][1]); for (var q = 1; q < a.length; q++) x.lineTo(a[q][0], a[q][1]); x.stroke(); }
+    if (p < 1) {
+      x.lineCap = 'round'; x.lineJoin = 'round';
+      x.strokeStyle = 'rgba(0,0,0,.4)'; x.lineWidth = fw + 3; path(rest);
+      x.strokeStyle = 'rgb(' + progRgb + ')'; x.lineWidth = fw; path(rest);
+      x.save(); x.setLineDash([1.5, fw * 0.8]); x.strokeStyle = 'rgba(0,0,0,.3)'; path(rest); x.restore();     // «скрутка» каната
+      var ch = [[tx, ty]], dsum = 0;                                                                         // обугленный кончик
+      for (i = k; i < pts.length && dsum < fw * 3; i++) { dsum += Math.hypot(pts[i][0] - ch[ch.length - 1][0], pts[i][1] - ch[ch.length - 1][1]); ch.push(pts[i]); }
+      if (ch.length > 1) { x.strokeStyle = 'rgba(20,12,8,.75)'; x.lineWidth = fw; path(ch); }
+      var fl = 0.8 + 0.2 * Math.sin(now * 0.03) + 0.1 * Math.sin(now * 0.071), R = fw * (2.2 * fl + 1.5);      // пламя
+      var gr = x.createRadialGradient(tx, ty, 0, tx, ty, R * 2);
+      gr.addColorStop(0, 'rgba(255,250,200,1)'); gr.addColorStop(0.25, 'rgba(255,200,80,.9)'); gr.addColorStop(0.6, 'rgba(255,110,20,.35)'); gr.addColorStop(1, 'rgba(255,60,0,0)');
+      x.globalCompositeOperation = 'lighter'; x.fillStyle = gr; x.beginPath(); x.arc(tx, ty, R * 2, 0, 6.2832); x.fill();
+      if (fuse.fx && state.playing && fuse.sp.length < 80) {
+        var n = Math.random() < 0.7 ? 1 : 2;
+        while (n--) { var an = Math.random() * 6.2832, sp = 40 + Math.random() * 90; fuse.sp.push({ x: tx, y: ty, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp - 50, life: 0.4 + Math.random() * 0.6 }); }
+      }
+    }
+    x.globalCompositeOperation = 'lighter';
+    for (i = fuse.sp.length - 1; i >= 0; i--) {     // искры
+      var q = fuse.sp[i]; q.life -= dt;
+      if (q.life <= 0) { fuse.sp.splice(i, 1); continue; }
+      q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 120 * dt;
+      x.globalAlpha = Math.min(1, q.life * 2); x.fillStyle = '#ffc060'; x.beginPath(); x.arc(q.x, q.y, 1.2 + q.life, 0, 6.2832); x.fill();
+    }
+    x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
+  }
+
+  function updateCoverFx(now) {                      // каждый кадр: пластинка, прогресс-бар и фитиль следуют за положением обложки
+    var r = coverEl.getBoundingClientRect(), vis = r.width > 20 && coverEl.style.opacity !== '0';
+    var vd = $('vdisc'), vOn = vis && cov.shape === 'vinyl';
+    if (vOn) {
+      vd.style.left = r.left + 'px'; vd.style.top = r.top + 'px'; vd.style.width = r.width + 'px'; vd.style.height = r.height + 'px';
+      var s = coverEl.getAttribute('src') || '';
+      if (s !== cov.src) { cov.src = s; $('vlabel').style.backgroundImage = s ? 'url("' + s.replace(/"/g, '%22') + '")' : 'none'; }
+      var pl = state.playing ? 'running' : 'paused';
+      if (pl !== cov.play) { cov.play = pl; vd.style.setProperty('--vplay', pl); }
+    }
+    var want = vOn ? 'block' : 'none'; if (vd.style.display !== want) vd.style.display = want;
+    var p = updateProg(), fOn = vis && p >= 0 && progStyle === 'fuse', fc = $('fuse');
+    if (fOn) { if (fc.style.display !== 'block') fc.style.display = 'block'; drawFuse(now, r, p); }
+    else if (fc.style.display !== 'none') { fc.style.display = 'none'; fuse.sp.length = 0; }
+  }
+
+  function fxResize() {
+    var m = $('mesh'); m.width = 256; m.height = Math.max(2, Math.round(256 * innerHeight / innerWidth));
+    ['snow', 'fuse'].forEach(function (id) { var c = $(id); c.width = innerWidth; c.height = innerHeight; });
+  }
+  function fxInit() {
+    mesh.ctx = $('mesh').getContext('2d'); snow.ctx = $('snow').getContext('2d');
+    fxResize(); window.addEventListener('resize', fxResize);
+    meshColors(); applyMeshFx(); applyBlurBg(); applyShape();
+  }
+
+  /* ================= Синхронизация и цикл отрисовки ================= */
+  function currentPos() {
+    var p = state.basePos;
+    if (state.playing) p += (performance.now() - state.baseTime) / 1000;
+    return p + state.offset;
+  }
+
+  function findActive(pos) {
+    var L = state.lyrics, lo = 0, hi = L.length - 1, ans = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (L[mid].t <= pos) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return ans;
+  }
+
+  // Раскладка: обложка слева, пока есть текст. По центру: нет текста, ничего не играет или трек закончился.
+  var lastCentered = true;
+  function trackEnded() {
+    return !!state.title && state.duration > 0 && (currentPos() - state.offset) >= state.duration - 0.6;
+  }
+  function updateLayout() {
+    var centered;
+    if (trackEnded() || state.lyricsState === 'none') centered = true;
+    else if (state.lyricsState === 'found') centered = false;
+    else centered = lastCentered;                    // текст ещё ищем: остаёмся как были, без метаний влево-вправо
+    if (centered !== lastCentered) { lastCentered = centered; appEl.classList.toggle('centered', centered); }
+  }
+
+  // HD не нашлась (поиск закончен): есть миниатюра -> обложка плавно уменьшается; нет никакой -> складывается, название едет на её место
+  function updateCoverSize() {
+    var mode = coverMode;
+    if (!dev.shrink || !state.title || state.hdShown) mode = '';
+    else if (state.hdDone && performance.now() - state.changeAt > 1800) {
+      var fresh = state.thumbAt > state.changeAt - 1200 && state.thumbImg && !state.thumbLogo;
+      mode = fresh ? 'small' : 'none';
+    }
+    if (mode !== coverMode) {
+      coverMode = mode; var l = $('left');
+      l.classList.toggle('cover-small', mode === 'small'); l.classList.toggle('cover-none', mode === 'none');
+    }
+  }
+
+  function frame(now) {
+    if (state.lyrics.length) {
+      var pos = currentPos(), idx = findActive(pos);
+      // строка не откатывается назад из-за дрожания позиции; назад — только при реальной перемотке
+      if (idx < state.activeIdx && state.activeIdx >= 0 && pos > state.lastPos - 1.0) idx = state.activeIdx;
+      state.lastPos = pos;
+      if (idx !== state.activeIdx) {
+        state.activeIdx = idx;
+        state.lineEls.forEach(function (el, i) {
+          el.classList.toggle('active', i === idx);
+          el.classList.toggle('past', i < idx);
+          el.classList.toggle('future', i > idx);
+        });
+        var el = state.lineEls[Math.max(idx, 0)];
+        if (el) {
+          var lyrH = ($('lyrics') && $('lyrics').clientHeight) || innerHeight;
+          var center = el.offsetTop + el.offsetHeight / 2;
+          trackEl.style.transform = 'translateY(' + (lyrH / 2 - center) + 'px)';
+        }
+      }
+      updateReveal(pos, idx);
+    }
+    updateLayout();
+    updateCoverSize();
+    updateCoverFx(now);
+    drawEq();
+    if (wave.ok && state.bgMode === 'waves') drawWaves(now);
+    else if (w2.ok && state.bgMode === 'waves2') drawWaves2(now);
+    else if (w3.ok && state.bgMode === 'waves3') drawWaves3(now);
+    else if (state.bgMode === 'blobs') drawBlobs(now);
+    else if (state.bgMode === 'stars') drawStars(now);
+    else if (state.bgMode === 'mesh') drawMesh(now);
+    else if (state.bgMode === 'snow') drawSnow(now);
+    else if (state.bgMode === 'blurcover') updateBlurBg();
+    requestAnimationFrame(frame);
+  }
+
+  try { localStorage.removeItem('sp_rt'); } catch (e) {}   // очистка старого токена
+  // Кнопки управления воспроизведением на экране
+  (function initMediaControls() {
+    var map = { btnPrev: 'prev', btnPlay: 'playpause', btnNext: 'next' };
+    Object.keys(map).forEach(function (id) {
+      var btn = $(id); if (!btn) return;
+      btn.addEventListener('click', function () {
+        btn.classList.add('pulse');
+        setTimeout(function () { btn.classList.remove('pulse'); }, 180);
+        if (typeof window.slwMediaControl === 'function') window.slwMediaControl(map[id]);
+      });
+    });
+    // если нет нативного моста (например, обычный браузер/WE), скрываем кнопки управления
+    if (typeof window.slwMediaControl !== 'function') $('mctrl').classList.add('hidden');
+    // клик по прогресс-бару — перемотка трека (в окне и на рабочем столе)
+    function handleSeekRatio(ratio) {
+      if (!state.title || state.duration <= 0) return;
+      var target = Math.max(0, Math.min(state.duration, ratio * state.duration));
+      state.basePos = target;
+      state.baseTime = performance.now();
+      state.lastPos = target + state.offset;
+      if (typeof window.slwMediaSeek === 'function') window.slwMediaSeek(target);
+    }
+    window.__slwHandleSeekRatio = handleSeekRatio;
+    var pb = $('pbar');
+    if (pb) {
+      pb.addEventListener('click', function (ev) {
+        var r = pb.getBoundingClientRect();
+        if (!r.width) return;
+        handleSeekRatio(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)));
+      });
+    }
+  })();
+  var lastPlayIcon = null;
+  function syncMediaCtrlIcon() {
+    if (lastPlayIcon === state.playing) return;
+    lastPlayIcon = state.playing;
+    var ip = $('icoPlay'), ipa = $('icoPause');
+    if (ip) ip.style.display = state.playing ? 'none' : 'block';
+    if (ipa) ipa.style.display = state.playing ? 'block' : 'none';
+  }
+  setInterval(syncMediaCtrlIcon, 200);
+  initWaves();
+  initBlobs();
+  initWaves2();
+  initWaves3();
+  fxInit();
+  applyLang();
+  setInterval(updateClock, 250);
+  applyTheme();
+  idleRefresh();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

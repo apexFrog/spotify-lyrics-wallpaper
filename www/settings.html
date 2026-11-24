@@ -1,0 +1,1598 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Settings — Spotify Lyrics Wallpaper</title>
+<style>
+  :root {
+    --bg: #121216;
+    --sidebar: #18181f;
+    --card: #1e1e27;
+    --card-hover: #252530;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #f2f3f7;
+    --muted: #989aa8;
+    --accent: #1ed760;
+    --accent-soft: rgba(30, 215, 96, 0.16);
+    --danger: #ff5c6c;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--text);
+    font: 13.5px/1.45 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    user-select: none; overflow: hidden;
+  }
+  .layout { display: flex; height: 100%; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 255px; flex: 0 0 255px; background: var(--sidebar);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    padding: 14px 10px; gap: 10px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px; padding: 4px 8px 6px;
+  }
+  .brand-dot {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, #1ed760, #1496e6);
+    display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #0b1114;
+    flex-shrink: 0;
+  }
+  .brand-title { font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
+  .brand-sub { font-size: 11px; color: var(--muted); }
+
+  .search {
+    width: 100%; padding: 8px 11px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font: inherit; outline: none; transition: border-color .15s;
+  }
+  .search:focus { border-color: var(--accent); }
+  .search::placeholder { color: var(--muted); }
+
+  .nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+  .nav-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 11px; border-radius: 9px; cursor: pointer;
+    color: var(--muted); font-weight: 500; transition: background .15s, color .15s;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .nav-badge {
+    font-size: 11px; padding: 1px 6px; border-radius: 99px;
+    background: rgba(255,255,255,0.08); color: var(--muted);
+  }
+  .nav-item.active .nav-badge { background: rgba(30,215,96,0.22); color: var(--accent); }
+  .nav-sep { height: 1px; background: var(--border); margin: 6px 6px; }
+
+  .sidebar-foot {
+    display: flex; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border);
+  }
+  .btn {
+    flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font: 12px/1.2 inherit; font-weight: 600;
+    cursor: pointer; transition: background .15s, border-color .15s; white-space: nowrap;
+  }
+  .btn:hover { background: var(--card-hover); border-color: rgba(255,255,255,0.16); }
+  .btn.danger { color: var(--danger); }
+  .btn.primary { background: var(--accent); color: #0a140d; border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.inline { flex: 0 0 auto; padding: 7px 13px; }
+
+  /* Content */
+  .main { flex: 1; overflow-y: auto; padding: 22px 26px 40px; }
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 16px;
+  }
+  .section-title { font-size: 20px; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.02em; }
+  .section-head .section-title { margin-bottom: 0; }
+  .group-heading {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); font-weight: 700; margin: 16px 0 8px 2px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 15px; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row-label { flex: 1; min-width: 0; }
+  .row-name { font-weight: 500; color: var(--text); }
+  .row-hint { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .row-ctrl { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+  /* Controls */
+  select, input[type="text"] {
+    min-width: 210px; max-width: 290px; padding: 7px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: #14141a; color: var(--text);
+    font: inherit; outline: none;
+  }
+  select { cursor: pointer; }
+  select:focus, input[type="text"]:focus { border-color: var(--accent); }
+
+  .slider-wrap { display: flex; align-items: center; gap: 10px; }
+  input[type="range"] { width: 165px; accent-color: var(--accent); cursor: pointer; }
+  .num-val {
+    width: 62px; padding: 5px 7px; border-radius: 7px; text-align: right;
+    border: 1px solid var(--border); background: #14141a; color: var(--text);
+    font: 12.5px/1.2 "Consolas", monospace; outline: none;
+  }
+  .num-val:focus { border-color: var(--accent); }
+
+  /* Toggle switch */
+  .switch { position: relative; width: 42px; height: 24px; display: inline-block; cursor: pointer; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch-track {
+    position: absolute; inset: 0; border-radius: 99px; background: #323342;
+    transition: background .18s;
+  }
+  .switch-track::after {
+    content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; transition: transform .18s;
+  }
+  .switch input:checked + .switch-track { background: var(--accent); }
+  .switch input:checked + .switch-track::after { transform: translateX(18px); }
+
+  /* Color picker */
+  .color-wrap { display: flex; align-items: center; gap: 8px; }
+  input[type="color"] {
+    width: 34px; height: 28px; border: 1px solid var(--border); border-radius: 7px;
+    background: transparent; cursor: pointer; padding: 2px;
+  }
+  .hex-badge { font: 12px/1 "Consolas", monospace; color: var(--muted); min-width: 60px; }
+
+  /* File picker */
+  .file-wrap { display: flex; align-items: center; gap: 6px; max-width: 320px; }
+  .file-path {
+    max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12px; color: var(--muted);
+  }
+
+  /* Presets Gallery (Wallpaper Engine Playlist style: rectangles with photo inside) */
+  .preset-creator {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 18px; display: flex; align-items: center; gap: 14px;
+  }
+  .creator-thumb {
+    width: 96px; height: 64px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(135deg, #252533, #17171f);
+    border: 1px dashed rgba(255,255,255,0.2); overflow: hidden; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 11px; color: var(--muted); padding: 4px; position: relative;
+    transition: border-color .15s;
+  }
+  .creator-thumb:hover { border-color: var(--accent); color: var(--text); }
+  .creator-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .creator-fields { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .creator-row { display: flex; gap: 8px; align-items: center; }
+  .creator-row input[type="text"] { flex: 1; max-width: none; min-width: 0; }
+  .creator-hint { font-size: 11.5px; color: var(--muted); }
+
+  .preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 14px;
+  }
+  .preset-tile {
+    position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden;
+    background: linear-gradient(135deg, #242434, #171720);
+    border: 2px solid rgba(255,255,255,0.08);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.42);
+    cursor: pointer; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  }
+  .preset-tile:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.32);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.55);
+  }
+  .preset-tile.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(30,215,96,0.25), 0 8px 22px rgba(0,0,0,0.5);
+  }
+  .preset-tile img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    transition: transform .25s ease;
+  }
+  .preset-tile:hover img { transform: scale(1.04); }
+  .preset-placeholder {
+    width: 100%; height: 100%; display: grid; place-items: center;
+    font-size: 28px; color: rgba(255,255,255,0.22);
+    background: radial-gradient(circle at 30% 30%, rgba(30,215,96,0.18), transparent 60%),
+                linear-gradient(135deg, #232334, #14141c);
+  }
+  .preset-caption {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 20px 10px 8px;
+    background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 60%, transparent 100%);
+    font-size: 12.5px; font-weight: 600; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .preset-actions {
+    position: absolute; top: 6px; right: 6px; display: flex; gap: 4px;
+    opacity: 0; transition: opacity .15s;
+  }
+  .preset-tile:hover .preset-actions { opacity: 1; }
+  .preset-act {
+    width: 26px; height: 26px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(16,16,22,0.82); color: #fff; font-size: 12px;
+    display: grid; place-items: center; cursor: pointer; backdrop-filter: blur(6px);
+    transition: background .12s, color .12s;
+  }
+  .preset-act:hover { background: var(--accent); color: #0a140d; border-color: transparent; }
+  .preset-act.del:hover { background: var(--danger); color: #fff; }
+
+  .empty { color: var(--muted); padding: 28px; text-align: center; }
+
+  /* Visual Card Selectors (replaces long dropdowns for visual styles) */
+  .row.visual-row { flex-direction: column; align-items: stretch; gap: 10px; padding: 14px 15px; }
+  .vcard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 8px;
+  }
+  .vcard {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 8px 6px 7px; border-radius: 9px;
+    background: #14141b; border: 1.5px solid rgba(255,255,255,0.08);
+    cursor: pointer; transition: border-color .15s, background .15s, transform .12s;
+    text-align: center;
+  }
+  .vcard:hover { border-color: rgba(255,255,255,0.28); background: #1a1a24; transform: translateY(-1px); }
+  .vcard.active { border-color: var(--accent); background: rgba(30,215,96,0.12); box-shadow: 0 0 0 1px rgba(30,215,96,0.28); }
+  .vcard-prev {
+    width: 100%; height: 42px; border-radius: 6px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: #0d0d13; position: relative; font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .vcard-lbl { font-size: 11.2px; color: var(--muted); line-height: 1.2; word-break: break-word; }
+  .vcard.active .vcard-lbl { color: var(--text); font-weight: 600; }
+
+  /* Layout wireframes */
+  .vl-wrap { display: flex; width: 76%; height: 72%; gap: 5px; align-items: center; justify-content: center; }
+  .vl-wrap.mir { flex-direction: row-reverse; }
+  .vl-wrap.cin { flex-direction: column; gap: 3px; }
+  .vl-cov { width: 20px; height: 20px; border-radius: 4px; background: var(--accent); opacity: .85; flex-shrink: 0; }
+  .vl-wrap.cin .vl-cov { width: 14px; height: 14px; border-radius: 3px; }
+  .vl-lines { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+  .vl-wrap.cin .vl-lines { align-items: center; width: 100%; }
+  .vl-l { height: 3px; border-radius: 2px; background: rgba(255,255,255,.32); width: 100%; }
+  .vl-l.a { background: #fff; width: 85%; }
+
+  /* Plate miniature previews */
+  .vp-box { padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 700; color: #fff; }
+  .vp-plate { background: rgba(0,0,0,.72); }
+  .vp-glass { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.1); }
+  .vp-liquid { background: linear-gradient(160deg, rgba(255,255,255,.22), rgba(255,255,255,.06)); border: 1px solid rgba(255,255,255,.32); box-shadow: inset 0 1px 0 rgba(255,255,255,.45); }
+  .vp-bar { background: linear-gradient(90deg, rgba(30,215,96,.28), transparent); box-shadow: inset 3.5px 0 0 #1ed760; border-radius: 2px; }
+  .vp-neon { border: 1.5px solid #1ed760; box-shadow: 0 0 8px rgba(30,215,96,.7), inset 0 0 6px rgba(30,215,96,.28); }
+  .vp-underline { border-bottom: 2.5px solid #1ed760; border-radius: 0; box-shadow: 0 4px 8px -3px rgba(30,215,96,.7); }
+  .vp-gradient { background: linear-gradient(90deg, rgba(30,215,96,.5), rgba(20,150,230,.08)); }
+  .vp-halo { background: radial-gradient(ellipse at center, rgba(30,215,96,.55), transparent 75%); box-shadow: 0 0 14px rgba(30,215,96,.4); }
+  .vp-brackets { border-radius: 2px; background-image: linear-gradient(#1ed760,#1ed760),linear-gradient(#1ed760,#1ed760),linear-gradient(#1ed760,#1ed760),linear-gradient(#1ed760,#1ed760),linear-gradient(#1ed760,#1ed760),linear-gradient(#1ed760,#1ed760),linear-gradient(#1ed760,#1ed760),linear-gradient(#1ed760,#1ed760); background-repeat: no-repeat; background-size: 7px 2px, 2px 7px; background-position: top left, top left, top right, top right, bottom left, bottom left, bottom right, bottom right; }
+  .vp-none { opacity: .5; }
+
+  /* Control style miniatures */
+  .vc-bar { display: flex; align-items: center; gap: 5px; color: #f2f3f7; }
+  .vc-b { width: 16px; height: 16px; display: grid; place-items: center; font-size: 8px; border-radius: 50%; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); }
+  .vc-b.p { width: 20px; height: 20px; font-size: 9px; background: rgba(255,255,255,.24); }
+  .vc-minimal .vc-b { background: none; border: none; font-size: 11px; }
+  .vc-pill { padding: 3px 7px; border-radius: 99px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); gap: 4px; }
+  .vc-pill .vc-b { background: none; border: none; width: 14px; height: 14px; }
+  .vc-pill .vc-b.p { background: rgba(255,255,255,.18); width: 17px; height: 17px; }
+  .vc-outline .vc-b { background: none; border: 1.5px solid #fff; }
+  .vc-squircle .vc-b { border-radius: 4px; }
+  .vc-squircle .vc-b.p { width: 24px; border-radius: 5px; }
+  .vc-diamond { gap: 8px; }
+  .vc-diamond .vc-b { border-radius: 3px; transform: rotate(45deg); width: 14px; height: 14px; }
+  .vc-diamond .vc-b.p { width: 17px; height: 17px; }
+  .vc-diamond .vc-b span { transform: rotate(-45deg); display: block; }
+  .vc-dock { width: 82%; border-radius: 5px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); gap: 0; overflow: hidden; }
+  .vc-dock .vc-b { flex: 1; width: auto; height: 20px; border-radius: 0; background: none; border: none; }
+  .vc-dock .vc-b.p { border-left: 1px solid rgba(255,255,255,.16); border-right: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.08); }
+  .vc-underline .vc-b { background: none; border: none; border-radius: 0; border-bottom: 2px solid rgba(255,255,255,.65); height: 18px; }
+  .vc-underline .vc-b.p { border-bottom-color: #1ed760; }
+  .vc-hex .vc-b { border-radius: 0; border: none; clip-path: polygon(25% 4%,75% 4%,98% 50%,75% 96%,25% 96%,2% 50%); width: 18px; height: 16px; }
+  .vc-hex .vc-b.p { width: 21px; height: 19px; }
+  .vc-compact .vc-b { border-radius: 3px; width: 14px; height: 14px; }
+  .vc-compact .vc-b.p { width: 22px; height: 14px; border-radius: 3px; background: #fff; color: #111; border: none; }
+
+  .sub-card-wrap { margin-bottom: 14px; }
+  .sub-card-wrap:last-child { margin-bottom: 0; }
+  .sub-heading {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); font-weight: 700; margin: 4px 0 7px 2px;
+  }
+
+  .toast {
+    position: fixed; right: 20px; bottom: 20px; padding: 10px 16px; border-radius: 10px;
+    background: var(--accent); color: #09130c; font-weight: 600; opacity: 0;
+    transform: translateY(10px); transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 99px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-dot">♪</div>
+      <div>
+        <div class="brand-title">Spotify Lyrics</div>
+        <div class="brand-sub">Standalone Wallpaper</div>
+      </div>
+    </div>
+    <input id="search" class="search" type="search" placeholder="Поиск настройки…">
+    <nav id="nav" class="nav"></nav>
+    <div class="sidebar-foot">
+      <button id="btnImport" class="btn">Импорт</button>
+      <button id="btnExport" class="btn">Экспорт</button>
+      <button id="btnReset" class="btn danger">Сброс</button>
+    </div>
+  </aside>
+  <main id="main" class="main"></main>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+(function () {
+  var LOCALE_MAP = { ru: 'ru-ru', en: 'en-us', zh: 'zh-chs', ja: 'ja-jp', ko: 'ko-kr' };
+  var UI_I18N = {
+    ru: {
+      winTitle: 'Настройки — Spotify Lyrics Wallpaper',
+      searchPh: 'Поиск настройки…',
+      navApp: '⚙ Приложение',
+      navPresets: '🖼 Пресеты',
+      general: 'Основные',
+      btnImport: 'Импорт',
+      btnExport: 'Экспорт',
+      btnReset: 'Сброс',
+      btnImportTip: 'Импорт JSON файла',
+      btnExportTip: 'Экспорт JSON файла',
+      btnResetTip: 'Сбросить все настройки обоев',
+      appTitle: 'Настройки приложения',
+      uiLang: 'Язык настроек',
+      uiLangHint: 'Язык интерфейса окна настроек и названий параметров',
+      langAuto: 'Авто (как в системе)',
+      displayMode: 'Режим отображения',
+      displayModeHint: 'Обои работают прямо за значками рабочего стола без Wallpaper Engine',
+      modeDesktop: 'Обои рабочего стола (под иконками)',
+      modeWindow: 'Отдельное окно',
+      monitor: 'Монитор',
+      monitorHint: 'На каком экране запускать живые обои',
+      primaryMonitor: 'Основной монитор',
+      audioDev: 'Источник звука (WASAPI)',
+      audioDevHint: 'Устройство для захвата спектра эквалайзера',
+      defaultAudio: 'Устройство воспроизведения по умолчанию',
+      audioFps: 'Частота обновления эквалайзера',
+      audioFpsHint: 'Выше значение — плавнее эквалайзер, чуть выше нагрузка',
+      pauseFs: 'Пауза в полноэкранных приложениях',
+      pauseFsHint: 'Экономит ресурсы во время игр и фильмов на этом мониторе',
+      autostart: 'Запускать вместе с Windows',
+      autostartHint: 'Автоматически стартует в системном трее при входе в систему',
+      presetsTitle: 'Пресеты',
+      presetNamePh: 'Название нового пресета…',
+      presetSaveBtn: '+ Сохранить пресет',
+      presetPickPhoto: 'Фото\n(авто)',
+      presetCreatorHint: 'Оставьте фото пустым — автоматически сделается снимок текущих обоев. Нажмите на миниатюру, чтобы выбрать свою картинку.',
+      presetEmpty: 'Пока нет сохранённых пресетов. Настройте обои и нажмите «+ Сохранить пресет» выше!',
+      actPhoto: 'Сменить фото',
+      actOverwrite: 'Перезаписать текущими настройками',
+      actRename: 'Переименовать',
+      actDelete: 'Удалить',
+      promptRename: 'Новое название пресета:',
+      confirmDelete: 'Удалить пресет «{name}»?',
+      confirmOverwrite: 'Обновить пресет «{name}» текущими настройками?',
+      confirmReset: 'Сбросить все настройки обоев к значениям по умолчанию?',
+      fileNone: 'Не выбрано',
+      filePick: 'Выбрать…',
+      fileClear: 'Очистить',
+      searchTitle: 'Поиск: «{q}»',
+      nothingFound: 'Ничего не найдено',
+      toastReset: 'Настройки сброшены',
+      toastPresetSaved: 'Пресет сохранён!',
+      toastPresetApplied: 'Пресет применён!',
+      toastPresetUpdated: 'Пресет обновлён!',
+      toastPresetRenamed: 'Пресет переименован',
+      toastPresetDeleted: 'Пресет удалён',
+      toastThumbUpdated: 'Фото пресета обновлено!',
+      rotTitle: 'Авто-ротация пресетов',
+      rotHint: 'Автоматически переключать сохранённые пресеты по таймеру',
+      rotEvery: 'Интервал',
+      rotMin: '{n} мин',
+      rotOrder: 'Порядок',
+      rotSeq: 'По порядку',
+      rotRand: 'Случайно',
+      rotNext: 'Следующий пресет',
+      resetSection: '↺ Сбросить раздел',
+      confirmResetSection: 'Сбросить настройки только в разделе «{name}»?',
+      toastSectionReset: 'Раздел сброшен!',
+      sliderResetTip: 'Двойной клик — сбросить по умолчанию',
+      subBgType: 'Тип фона', subBgOpts: 'Параметры выбранного фона',
+      subLayoutFont: 'Раскладка и шрифт', subAnim: 'Анимация текста', subColors: 'Цвета текста',
+      subOutline: 'Обводка и свечение строк', subPlate: 'Подсветка текущей строки',
+      subInfoStyle: 'Текст и обводка', subInfoPlate: 'Подложка блока трека', subPosition: 'Положение',
+      subClockDisp: 'Отображение и формат', subClockLook: 'Внешний вид и обводка',
+      subCtrlStyle: 'Внешний вид кнопок', subCtrlExtra: 'Цвет и положение'
+    },
+    en: {
+      winTitle: 'Settings — Spotify Lyrics Wallpaper',
+      searchPh: 'Search settings…',
+      navApp: '⚙ Application',
+      navPresets: '🖼 Presets',
+      general: 'General',
+      btnImport: 'Import',
+      btnExport: 'Export',
+      btnReset: 'Reset',
+      btnImportTip: 'Import JSON file',
+      btnExportTip: 'Export JSON file',
+      btnResetTip: 'Reset all wallpaper settings',
+      appTitle: 'Application settings',
+      uiLang: 'Settings language',
+      uiLangHint: 'Language of the settings window and property labels',
+      langAuto: 'Auto (system)',
+      displayMode: 'Display mode',
+      displayModeHint: 'Runs directly behind desktop icons without Wallpaper Engine',
+      modeDesktop: 'Desktop wallpaper (behind icons)',
+      modeWindow: 'Standalone window',
+      monitor: 'Monitor',
+      monitorHint: 'Which screen to run the live wallpaper on',
+      primaryMonitor: 'Primary monitor',
+      audioDev: 'Audio source (WASAPI)',
+      audioDevHint: 'Output device captured for the equalizer spectrum',
+      defaultAudio: 'Default playback device',
+      audioFps: 'Equalizer refresh rate',
+      audioFpsHint: 'Higher values are smoother with slightly more CPU usage',
+      pauseFs: 'Pause in fullscreen apps',
+      pauseFsHint: 'Saves resources during games and fullscreen video',
+      autostart: 'Launch with Windows',
+      autostartHint: 'Starts automatically in the system tray on sign-in',
+      presetsTitle: 'Presets',
+      presetNamePh: 'New preset name…',
+      presetSaveBtn: '+ Save preset',
+      presetPickPhoto: 'Photo\n(auto)',
+      presetCreatorHint: 'Leave the photo empty to automatically capture a live wallpaper snapshot, or click the thumbnail to pick your own image.',
+      presetEmpty: 'No saved presets yet. Customize your wallpaper and click "+ Save preset" above!',
+      actPhoto: 'Change photo',
+      actOverwrite: 'Overwrite with current settings',
+      actRename: 'Rename',
+      actDelete: 'Delete',
+      promptRename: 'New preset name:',
+      confirmDelete: 'Delete preset "{name}"?',
+      confirmOverwrite: 'Update preset "{name}" with current settings?',
+      confirmReset: 'Reset all wallpaper settings to defaults?',
+      fileNone: 'Not selected',
+      filePick: 'Browse…',
+      fileClear: 'Clear',
+      searchTitle: 'Search: "{q}"',
+      nothingFound: 'Nothing found',
+      toastReset: 'Settings reset',
+      toastPresetSaved: 'Preset saved!',
+      toastPresetApplied: 'Preset applied!',
+      toastPresetUpdated: 'Preset updated!',
+      toastPresetRenamed: 'Preset renamed',
+      toastPresetDeleted: 'Preset deleted',
+      toastThumbUpdated: 'Preset photo updated!',
+      rotTitle: 'Auto-rotate presets',
+      rotHint: 'Automatically switch saved presets on a timer',
+      rotEvery: 'Interval',
+      rotMin: '{n} min',
+      rotOrder: 'Order',
+      rotSeq: 'Sequential',
+      rotRand: 'Random',
+      rotNext: 'Next preset',
+      resetSection: '↺ Reset section',
+      confirmResetSection: 'Reset settings only in "{name}"?',
+      toastSectionReset: 'Section reset!',
+      sliderResetTip: 'Double-click to reset to default',
+      subBgType: 'Background type', subBgOpts: 'Selected background options',
+      subLayoutFont: 'Layout & font', subAnim: 'Lyrics animation', subColors: 'Text colors',
+      subOutline: 'Lines outline & glow', subPlate: 'Active line highlight',
+      subInfoStyle: 'Text & outline', subInfoPlate: 'Track block backdrop', subPosition: 'Position',
+      subClockDisp: 'Display & format', subClockLook: 'Appearance & outline',
+      subCtrlStyle: 'Buttons appearance', subCtrlExtra: 'Color & position'
+    },
+    zh: {
+      winTitle: '设置 — Spotify Lyrics Wallpaper',
+      searchPh: '搜索设置…',
+      navApp: '⚙ 应用程序',
+      navPresets: '🖼 预设',
+      general: '常规',
+      btnImport: '导入',
+      btnExport: '导出',
+      btnReset: '重置',
+      btnImportTip: '导入 JSON 文件',
+      btnExportTip: '导出 JSON 文件',
+      btnResetTip: '重置所有壁纸设置',
+      appTitle: '应用程序设置',
+      uiLang: '界面语言',
+      uiLangHint: '设置窗口和参数名称的显示语言',
+      langAuto: '自动（跟随系统）',
+      displayMode: '显示模式',
+      displayModeHint: '无需 Wallpaper Engine 即可直接在桌面图标后运行',
+      modeDesktop: '桌面壁纸（图标下方）',
+      modeWindow: '独立窗口',
+      monitor: '显示器',
+      monitorHint: '选择显示动态壁纸的屏幕',
+      primaryMonitor: '主显示器',
+      audioDev: '音频源 (WASAPI)',
+      audioDevHint: '用于捕获频谱的音频输出设备',
+      defaultAudio: '默认播放设备',
+      audioFps: '频谱刷新率',
+      audioFpsHint: '数值越高越流畅，CPU 占用略增',
+      pauseFs: '全屏应用时暂停',
+      pauseFsHint: '玩游戏或全屏看视频时自动节省资源',
+      autostart: '随 Windows 启动',
+      autostartHint: '登录系统时自动在托盘启动',
+      presetsTitle: '预设',
+      presetNamePh: '新预设名称…',
+      presetSaveBtn: '+ 保存预设',
+      presetPickPhoto: '封面\n(自动)',
+      presetCreatorHint: '留空封面将自动截取当前壁纸画面，也可点击缩略图选择自定义图片。',
+      presetEmpty: '暂无保存的预设。调整好壁纸后点击上方“+ 保存预设”即可！',
+      actPhoto: '更换封面',
+      actOverwrite: '用当前设置覆盖',
+      actRename: '重命名',
+      actDelete: '删除',
+      promptRename: '输入新的预设名称：',
+      confirmDelete: '确定删除预设“{name}”？',
+      confirmOverwrite: '用当前设置更新预设“{name}”？',
+      confirmReset: '将所有壁纸设置恢复默认值？',
+      fileNone: '未选择',
+      filePick: '选择…',
+      fileClear: '清除',
+      searchTitle: '搜索：“{q}”',
+      nothingFound: '未找到匹配项',
+      toastReset: '已重置设置',
+      toastPresetSaved: '预设已保存！',
+      toastPresetApplied: '预设已应用！',
+      toastPresetUpdated: '预设已更新！',
+      toastPresetRenamed: '预设已重命名',
+      toastPresetDeleted: '预设已删除',
+      toastThumbUpdated: '预设封面已更新！',
+      rotTitle: '自动轮换预设',
+      rotHint: '按定时自动切换已保存的预设',
+      rotEvery: '间隔',
+      rotMin: '{n} 分钟',
+      rotOrder: '顺序',
+      rotSeq: '顺序轮换',
+      rotRand: '随机',
+      rotNext: '下一个预设',
+      resetSection: '↺ 重置本页',
+      confirmResetSection: '仅重置“{name}”中的设置？',
+      toastSectionReset: '已重置本页设置！',
+      sliderResetTip: '双击恢复默认值',
+      subBgType: '背景类型', subBgOpts: '当前背景参数',
+      subLayoutFont: '布局与字体', subAnim: '歌词动画', subColors: '文字颜色',
+      subOutline: '描边与发光', subPlate: '当前行高亮',
+      subInfoStyle: '文字与描边', subInfoPlate: '歌曲信息底板', subPosition: '位置',
+      subClockDisp: '显示与格式', subClockLook: '外观与描边',
+      subCtrlStyle: '按钮样式', subCtrlExtra: '颜色与位置'
+    },
+    ja: {
+      winTitle: '設定 — Spotify Lyrics Wallpaper',
+      searchPh: '設定を検索…',
+      navApp: '⚙ アプリ',
+      navPresets: '🖼 プリセット',
+      general: '一般',
+      btnImport: '読込',
+      btnExport: '書出',
+      btnReset: '初期化',
+      btnImportTip: 'JSONファイルをインポート',
+      btnExportTip: 'JSONファイルをエクスポート',
+      btnResetTip: '壁紙設定をすべて初期化',
+      appTitle: 'アプリ設定',
+      uiLang: '設定の言語',
+      uiLangHint: '設定画面と項目名の表示言語',
+      langAuto: '自動（システム準拠）',
+      displayMode: '表示モード',
+      displayModeHint: 'Wallpaper Engineなしでデスクトップアイコンの背面に表示',
+      modeDesktop: 'デスクトップ壁紙（アイコンの背面）',
+      modeWindow: '独立ウィンドウ',
+      monitor: 'モニター',
+      monitorHint: 'ライブ壁紙を表示する画面',
+      primaryMonitor: 'プライマリモニター',
+      audioDev: 'オーディオソース (WASAPI)',
+      audioDevHint: 'イコライザー用に取得する再生デバイス',
+      defaultAudio: '既定の再生デバイス',
+      audioFps: 'イコライザー更新頻度',
+      audioFpsHint: '高いほど滑らかですが負荷が少し増えます',
+      pauseFs: 'フルスクリーン時に一時停止',
+      pauseFsHint: 'ゲームや全画面動画の再生中にリソースを節約します',
+      autostart: 'Windows起動時に自動開始',
+      autostartHint: 'サインイン時にタスクトレイで自動起動します',
+      presetsTitle: 'プリセット',
+      presetNamePh: '新しいプリセット名…',
+      presetSaveBtn: '+ プリセット保存',
+      presetPickPhoto: '画像\n(自動)',
+      presetCreatorHint: '画像を空のままにすると現在の壁紙を自動キャプチャします。サムネイルをクリックして任意の画像も選べます。',
+      presetEmpty: '保存されたプリセットはまだありません。上の「+ プリセット保存」から追加してください。',
+      actPhoto: '画像を変更',
+      actOverwrite: '現在の設定で上書き',
+      actRename: '名前を変更',
+      actDelete: '削除',
+      promptRename: '新しいプリセット名:',
+      confirmDelete: 'プリセット「{name}」を削除しますか？',
+      confirmOverwrite: 'プリセット「{name}」を現在の設定で更新しますか？',
+      confirmReset: 'すべての壁紙設定を初期値に戻しますか？',
+      fileNone: '未選択',
+      filePick: '選択…',
+      fileClear: 'クリア',
+      searchTitle: '検索: 「{q}」',
+      nothingFound: '見つかりませんでした',
+      toastReset: '設定を初期化しました',
+      toastPresetSaved: 'プリセットを保存しました！',
+      toastPresetApplied: 'プリセットを適用しました！',
+      toastPresetUpdated: 'プリセットを更新しました！',
+      toastPresetRenamed: '名前を変更しました',
+      toastPresetDeleted: 'プリセットを削除しました',
+      toastThumbUpdated: 'プリセット画像を更新しました！',
+      rotTitle: 'プリセット自動切替',
+      rotHint: '保存済みプリセットをタイマーで自動切替します',
+      rotEvery: '間隔',
+      rotMin: '{n} 分',
+      rotOrder: '順序',
+      rotSeq: '順番通り',
+      rotRand: 'ランダム',
+      rotNext: '次のプリセット',
+      resetSection: '↺ この項目を初期化',
+      confirmResetSection: '「{name}」の設定のみ初期化しますか？',
+      toastSectionReset: 'セクションを初期化しました！',
+      sliderResetTip: 'ダブルクリックで初期値に戻す',
+      subBgType: '背景タイプ', subBgOpts: '選択中の背景設定',
+      subLayoutFont: 'レイアウトと文字', subAnim: '歌詞アニメーション', subColors: '文字の色',
+      subOutline: '縁取りとグロー', subPlate: '現在行ハイライト',
+      subInfoStyle: '文字と縁取り', subInfoPlate: '曲情報の背景プレート', subPosition: '位置',
+      subClockDisp: '表示と形式', subClockLook: '外観と縁取り',
+      subCtrlStyle: 'ボタン外観', subCtrlExtra: '色と位置'
+    },
+    ko: {
+      winTitle: '설정 — Spotify Lyrics Wallpaper',
+      searchPh: '설정 검색…',
+      navApp: '⚙ 앱 설정',
+      navPresets: '🖼 프리셋',
+      general: '일반',
+      btnImport: '가져오기',
+      btnExport: '내보내기',
+      btnReset: '초기화',
+      btnImportTip: 'JSON 파일 가져오기',
+      btnExportTip: 'JSON 파일 내보내기',
+      btnResetTip: '모든 배경화면 설정 초기화',
+      appTitle: '애플리케이션 설정',
+      uiLang: '설정 언어',
+      uiLangHint: '설정 창과 항목 이름의 표시 언어',
+      langAuto: '자동 (시스템 언어)',
+      displayMode: '표시 모드',
+      displayModeHint: 'Wallpaper Engine 없이 바탕화면 아이콘 뒤에서 실행',
+      modeDesktop: '바탕화면 배경 (아이콘 뒤)',
+      modeWindow: '독립 창',
+      monitor: '모니터',
+      monitorHint: '라이브 배경화면을 표시할 화면',
+      primaryMonitor: '주 모니터',
+      audioDev: '오디오 소스 (WASAPI)',
+      audioDevHint: '이퀄라이저 스펙트럼 캡처용 출력 장치',
+      defaultAudio: '기본 재생 장치',
+      audioFps: '이퀄라이저 주사율',
+      audioFpsHint: '높을수록 부드럽지만 CPU 사용량이 약간 증가합니다',
+      pauseFs: '전체 화면 앱 실행 시 일시 정지',
+      pauseFsHint: '게임 및 전체 화면 영상 시청 시 리소스 절약',
+      autostart: 'Windows 시작 시 자동 실행',
+      autostartHint: '로그인 시 시스템 트레이에서 자동으로 시작됩니다',
+      presetsTitle: '프리셋',
+      presetNamePh: '새 프리셋 이름…',
+      presetSaveBtn: '+ 프리셋 저장',
+      presetPickPhoto: '사진\n(자동)',
+      presetCreatorHint: '사진을 비워두면 현재 배경화면 스냅샷이 자동 캡처됩니다. 썸네일을 클릭해 원하는 이미지를 선택할 수도 있습니다.',
+      presetEmpty: '저장된 프리셋이 없습니다. 배경화면을 꾸민 뒤 위의 "+ 프리셋 저장"을 눌러보세요!',
+      actPhoto: '사진 변경',
+      actOverwrite: '현재 설정으로 덮어쓰기',
+      actRename: '이름 변경',
+      actDelete: '삭제',
+      promptRename: '새 프리셋 이름:',
+      confirmDelete: '프리셋 "{name}"을(를) 삭제하시겠습니까?',
+      confirmOverwrite: '프리셋 "{name}"을(를) 현재 설정으로 업데이트하시겠습니까?',
+      confirmReset: '모든 배경화면 설정을 기본값으로 초기화할까요?',
+      fileNone: '선택 안 됨',
+      filePick: '선택…',
+      fileClear: '지우기',
+      searchTitle: '검색: "{q}"',
+      nothingFound: '검색 결과가 없습니다',
+      toastReset: '설정이 초기화되었습니다',
+      toastPresetSaved: '프리셋이 저장되었습니다!',
+      toastPresetApplied: '프리셋이 적용되었습니다!',
+      toastPresetUpdated: '프리셋이 업데이트되었습니다!',
+      toastPresetRenamed: '이름이 변경되었습니다',
+      toastPresetDeleted: '프리셋이 삭제되었습니다',
+      toastThumbUpdated: '프리셋 사진이 변경되었습니다!',
+      rotTitle: '프리셋 자동 순환',
+      rotHint: '타이머에 따라 저장된 프리셋을 자동으로 전환합니다',
+      rotEvery: '간격',
+      rotMin: '{n}분',
+      rotOrder: '순서',
+      rotSeq: '순차',
+      rotRand: '랜덤',
+      rotNext: '다음 프리셋',
+      resetSection: '↺ 이 섹션 초기화',
+      confirmResetSection: '"{name}" 섹션의 설정만 초기화할까요?',
+      toastSectionReset: '섹션이 초기화되었습니다!',
+      sliderResetTip: '더블 클릭하여 기본값으로 복원',
+      subBgType: '배경 유형', subBgOpts: '선택한 배경 옵션',
+      subLayoutFont: '레이아웃 및 글꼴', subAnim: '가사 애니메이션', subColors: '텍스트 색상',
+      subOutline: '외곽선 및 발광', subPlate: '현재 줄 강조',
+      subInfoStyle: '텍스트 및 외곽선', subInfoPlate: '트랙 블록 배경', subPosition: '위치',
+      subClockDisp: '표시 및 형식', subClockLook: '모양 및 외곽선',
+      subCtrlStyle: '버튼 스타일', subCtrlExtra: '색상 및 위치'
+    }
+  };
+
+  var schemaProps = {};
+  var localization = {};
+  var groups = [];
+  var state = { app: {}, values: {}, monitors: [], audioDevices: [], presets: [] };
+  var activeTab = '__presets__';
+  var searchQuery = '';
+  var draftPresetPath = '';
+  var draftPresetPreview = '';
+  var draftPresetName = '';
+
+  function currentLang() {
+    var pref = (state.app && state.app.uiLanguage) || 'auto';
+    if (pref !== 'auto' && UI_I18N[pref]) return pref;
+    var nav = ((navigator.languages && navigator.languages[0]) || navigator.language || 'en').toLowerCase().slice(0, 2);
+    return UI_I18N[nav] ? nav : 'en';
+  }
+
+  function U(key, vars) {
+    var lang = currentLang();
+    var s = (UI_I18N[lang] && UI_I18N[lang][key]) || UI_I18N.en[key] || key;
+    if (vars) {
+      for (var k in vars) s = s.replace('{' + k + '}', vars[k]);
+    }
+    return s;
+  }
+
+  function L(key) {
+    if (!key) return '';
+    var lang = currentLang();
+    var locKey = LOCALE_MAP[lang] || 'en-us';
+    if (localization[locKey] && localization[locKey][key]) return localization[locKey][key];
+    if (localization['en-us'] && localization['en-us'][key]) return localization['en-us'][key];
+    if (localization['ru-ru'] && localization['ru-ru'][key]) return localization['ru-ru'][key];
+    return key;
+  }
+
+  function post(msg) {
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.postMessage(msg);
+    }
+  }
+
+  function showToast(text) {
+    var t = document.getElementById('toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(t._tm);
+    t._tm = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+
+  function applyChromeI18n() {
+    document.documentElement.lang = currentLang();
+    document.title = U('winTitle');
+    post({ type: 'setWindowTitle', title: U('winTitle') });
+    document.getElementById('search').placeholder = U('searchPh');
+    var bi = document.getElementById('btnImport');
+    var be = document.getElementById('btnExport');
+    var br = document.getElementById('btnReset');
+    bi.textContent = U('btnImport'); bi.title = U('btnImportTip');
+    be.textContent = U('btnExport'); be.title = U('btnExportTip');
+    br.textContent = U('btnReset');  br.title = U('btnResetTip');
+  }
+
+  function weColorToHex(str) {
+    var parts = String(str || '1 1 1').trim().split(/\s+/).map(Number);
+    var r = Math.max(0, Math.min(255, Math.round((parts[0] || 0) * 255)));
+    var g = Math.max(0, Math.min(255, Math.round((parts[1] || 0) * 255)));
+    var b = Math.max(0, Math.min(255, Math.round((parts[2] || 0) * 255)));
+    return '#' + [r, g, b].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  function hexToWeColor(hex) {
+    var h = String(hex || '#ffffff').replace('#', '');
+    var r = (parseInt(h.slice(0, 2), 16) || 0) / 255;
+    var g = (parseInt(h.slice(2, 4), 16) || 0) / 255;
+    var b = (parseInt(h.slice(4, 6), 16) || 0) / 255;
+    return r.toFixed(4) + ' ' + g.toFixed(4) + ' ' + b.toFixed(4);
+  }
+
+  function evalCondition(cond) {
+    if (!cond) return true;
+    try {
+      var names = [];
+      var vals = [];
+      for (var k in schemaProps) {
+        if (schemaProps[k].type === 'group') continue;
+        names.push(k);
+        var v = state.values[k];
+        if (v === undefined) v = schemaProps[k].value;
+        vals.push({ value: v });
+      }
+      var fn = new Function(names.join(','), 'return !!(' + cond + ');');
+      return !!fn.apply(null, vals);
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function buildGroupsFromSchema(props) {
+    schemaProps = props || {};
+    var entries = Object.keys(schemaProps)
+      .filter(function (k) { return k !== 'schemecolor'; })
+      .map(function (k) { return { key: k, def: schemaProps[k] }; });
+    entries.sort(function (a, b) {
+      return (a.def.order || 0) - (b.def.order || 0);
+    });
+
+    groups = [];
+    var current = { id: '__general__', titleKey: null, items: [] };
+
+    entries.forEach(function (entry) {
+      if (entry.def.type === 'group') {
+        if (current.items.length) groups.push(current);
+        current = { id: entry.key, titleKey: entry.def.text || entry.key, items: [] };
+      } else {
+        current.items.push(entry);
+      }
+    });
+    if (current.items.length) groups.push(current);
+  }
+
+  function groupTitle(g) {
+    return g.titleKey ? L(g.titleKey) : U('general');
+  }
+
+  function groupNavLabel(g) {
+    return groupTitle(g);
+  }
+
+  function renderNav() {
+    var nav = document.getElementById('nav');
+    nav.innerHTML = '';
+
+    function addItem(id, label, badge) {
+      var el = document.createElement('div');
+      el.className = 'nav-item' + (!searchQuery && activeTab === id ? ' active' : '');
+      var span = document.createElement('span');
+      span.textContent = label;
+      el.appendChild(span);
+      if (badge !== undefined && badge !== null) {
+        var b = document.createElement('span');
+        b.className = 'nav-badge';
+        b.textContent = badge;
+        el.appendChild(b);
+      }
+      el.onclick = function () {
+        searchQuery = '';
+        document.getElementById('search').value = '';
+        activeTab = id;
+        renderNav();
+        renderMain();
+      };
+      nav.appendChild(el);
+    }
+
+    addItem('__presets__', U('navPresets'), (state.presets || []).length);
+    addItem('__app__', U('navApp'));
+    var sep = document.createElement('div');
+    sep.className = 'nav-sep';
+    nav.appendChild(sep);
+
+    groups.forEach(function (g) {
+      addItem(g.id, groupNavLabel(g));
+    });
+  }
+
+  function setProp(key, value) {
+    state.values[key] = value;
+    post({ type: 'setProperty', key: key, value: value });
+    updateConditions();
+  }
+
+  function updateConditions() {
+    var rows = document.querySelectorAll('[data-cond]');
+    rows.forEach(function (row) {
+      var cond = row.getAttribute('data-cond');
+      row.style.display = evalCondition(cond) ? '' : 'none';
+    });
+    document.querySelectorAll('.sub-card-wrap').forEach(function (wrap) {
+      var anyVis = Array.prototype.some.call(wrap.querySelectorAll('.row'), function (r) {
+        return r.style.display !== 'none';
+      });
+      wrap.style.display = anyVis ? '' : 'none';
+    });
+  }
+
+  function createPropertyRow(entry) {
+    var key = entry.key, def = entry.def;
+    var val = state.values[key];
+    if (val === undefined) val = def.value;
+
+    var row = document.createElement('div');
+    row.className = 'row';
+    if (def.condition) {
+      row.setAttribute('data-cond', def.condition);
+      if (!evalCondition(def.condition)) row.style.display = 'none';
+    }
+
+    var lbl = document.createElement('div');
+    lbl.className = 'row-label';
+    var nameEl = document.createElement('div');
+    nameEl.className = 'row-name';
+    nameEl.textContent = L(def.text || key);
+    lbl.appendChild(nameEl);
+    row.appendChild(lbl);
+
+    var ctrl = document.createElement('div');
+    ctrl.className = 'row-ctrl';
+
+    if (def.type === 'combo') {
+      var sel = document.createElement('select');
+      (def.options || []).forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = L(opt.label);
+        if (String(val) === String(opt.value)) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.onchange = function () { setProp(key, sel.value); };
+      ctrl.appendChild(sel);
+    }
+    else if (def.type === 'slider') {
+      var wrap = document.createElement('div');
+      wrap.className = 'slider-wrap';
+      var min = def.min !== undefined ? def.min : 0;
+      var max = def.max !== undefined ? def.max : 100;
+      var step = def.step !== undefined ? def.step : (def.fraction ? 0.05 : 1);
+
+      var rng = document.createElement('input');
+      rng.type = 'range';
+      rng.min = min; rng.max = max; rng.step = step;
+      rng.value = Number(val ?? min);
+      rng.title = U('sliderResetTip');
+
+      var num = document.createElement('input');
+      num.type = 'number';
+      num.className = 'num-val';
+      num.min = min; num.max = max; num.step = step;
+      num.value = Number(val ?? min);
+
+      rng.oninput = function () {
+        var n = Number(rng.value);
+        num.value = n;
+        setProp(key, n);
+      };
+      rng.ondblclick = function () {
+        var d = Number(def.value ?? min);
+        rng.value = d;
+        num.value = d;
+        setProp(key, d);
+      };
+      num.onchange = function () {
+        var n = Number(num.value);
+        if (isNaN(n)) return;
+        rng.value = Math.max(min, Math.min(max, n));
+        setProp(key, n);
+      };
+
+      wrap.appendChild(rng);
+      wrap.appendChild(num);
+      ctrl.appendChild(wrap);
+    }
+    else if (def.type === 'bool') {
+      var sw = document.createElement('label');
+      sw.className = 'switch';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!val;
+      cb.onchange = function () { setProp(key, cb.checked); };
+      var tr = document.createElement('span');
+      tr.className = 'switch-track';
+      sw.appendChild(cb);
+      sw.appendChild(tr);
+      ctrl.appendChild(sw);
+    }
+    else if (def.type === 'color') {
+      var cw = document.createElement('div');
+      cw.className = 'color-wrap';
+      var hex = weColorToHex(val);
+      var col = document.createElement('input');
+      col.type = 'color';
+      col.value = hex;
+      var badge = document.createElement('span');
+      badge.className = 'hex-badge';
+      badge.textContent = hex.toUpperCase();
+      col.oninput = function () {
+        badge.textContent = col.value.toUpperCase();
+        setProp(key, hexToWeColor(col.value));
+      };
+      cw.appendChild(col);
+      cw.appendChild(badge);
+      ctrl.appendChild(cw);
+    }
+    else if (def.type === 'file') {
+      var fw = document.createElement('div');
+      fw.className = 'file-wrap';
+      var fp = document.createElement('span');
+      fp.className = 'file-path';
+      fp.id = 'file-' + key;
+      fp.title = val || '';
+      fp.textContent = val ? String(val).split(/[\\/]/).pop() : U('fileNone');
+
+      var pick = document.createElement('button');
+      pick.className = 'btn inline';
+      pick.textContent = U('filePick');
+      pick.onclick = function () { post({ type: 'pickFile', key: key }); };
+
+      var clr = document.createElement('button');
+      clr.className = 'btn inline';
+      clr.textContent = '✕';
+      clr.title = U('fileClear');
+      clr.onclick = function () {
+        fp.textContent = U('fileNone');
+        fp.title = '';
+        setProp(key, '');
+      };
+
+      fw.appendChild(fp);
+      fw.appendChild(pick);
+      fw.appendChild(clr);
+      ctrl.appendChild(fw);
+    }
+
+    row.appendChild(ctrl);
+    return row;
+  }
+
+  function updateApp(patch, rerender) {
+    state.app = Object.assign({}, state.app, patch);
+    post({ type: 'setAppSettings', app: state.app });
+    if (rerender) {
+      applyChromeI18n();
+      renderNav();
+      renderMain();
+    }
+  }
+
+  function renderPresetsTab(main) {
+    var list = state.presets || [];
+    var head = document.createElement('div');
+    head.className = 'section-head';
+    var h = document.createElement('div');
+    h.className = 'section-title';
+    h.textContent = U('presetsTitle') + ' — (' + list.length + ')';
+    head.appendChild(h);
+    if (list.length > 1) {
+      var nxtBtn = document.createElement('button');
+      nxtBtn.className = 'btn inline';
+      nxtBtn.textContent = '⏭ ' + U('rotNext');
+      nxtBtn.onclick = function () { post({ type: 'nextVisualPreset' }); };
+      head.appendChild(nxtBtn);
+    }
+    main.appendChild(head);
+
+    // Rotation card
+    var rotCard = document.createElement('div');
+    rotCard.className = 'card';
+    rotCard.style.marginBottom = '16px';
+
+    var rotRow = document.createElement('div');
+    rotRow.className = 'row';
+    var rotLbl = document.createElement('div');
+    rotLbl.className = 'row-label';
+    rotLbl.innerHTML = '<div class="row-name"></div><div class="row-hint"></div>';
+    rotLbl.firstChild.textContent = U('rotTitle');
+    rotLbl.lastChild.textContent = U('rotHint');
+
+    var rotCtrl = document.createElement('div');
+    rotCtrl.className = 'row-ctrl';
+
+    var rotIntSel = document.createElement('select');
+    rotIntSel.style.minWidth = '105px';
+    [1, 5, 10, 15, 30, 60].forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = m; o.textContent = U('rotMin', { n: m });
+      if (Number(state.app.presetRotationMinutes || 15) === m) o.selected = true;
+      rotIntSel.appendChild(o);
+    });
+    rotIntSel.onchange = function () { updateApp({ presetRotationMinutes: Number(rotIntSel.value) }); };
+
+    var rotOrdSel = document.createElement('select');
+    rotOrdSel.style.minWidth = '125px';
+    [{ v: 'sequential', l: U('rotSeq') }, { v: 'random', l: U('rotRand') }].forEach(function (o) {
+      var op = document.createElement('option');
+      op.value = o.v; op.textContent = o.l;
+      if ((state.app.presetRotationOrder || 'sequential') === o.v) op.selected = true;
+      rotOrdSel.appendChild(op);
+    });
+    rotOrdSel.onchange = function () { updateApp({ presetRotationOrder: rotOrdSel.value }); };
+
+    var rotSw = document.createElement('label');
+    rotSw.className = 'switch';
+    var rotCb = document.createElement('input');
+    rotCb.type = 'checkbox';
+    rotCb.checked = !!state.app.presetRotationEnabled;
+    rotCb.onchange = function () {
+      updateApp({ presetRotationEnabled: rotCb.checked });
+      rotIntSel.style.display = rotOrdSel.style.display = rotCb.checked ? '' : 'none';
+    };
+    var rotTr = document.createElement('span'); rotTr.className = 'switch-track';
+    rotSw.appendChild(rotCb); rotSw.appendChild(rotTr);
+
+    rotIntSel.style.display = rotOrdSel.style.display = rotCb.checked ? '' : 'none';
+    rotCtrl.appendChild(rotIntSel);
+    rotCtrl.appendChild(rotOrdSel);
+    rotCtrl.appendChild(rotSw);
+    rotRow.appendChild(rotLbl);
+    rotRow.appendChild(rotCtrl);
+    rotCard.appendChild(rotRow);
+    main.appendChild(rotCard);
+
+    // Creator bar
+    var creator = document.createElement('div');
+    creator.className = 'preset-creator';
+
+    var thumbBox = document.createElement('div');
+    thumbBox.className = 'creator-thumb';
+    thumbBox.title = U('actPhoto');
+    if (draftPresetPreview) {
+      var ti = document.createElement('img');
+      ti.src = draftPresetPreview;
+      thumbBox.appendChild(ti);
+    } else {
+      thumbBox.textContent = U('presetPickPhoto');
+      thumbBox.style.whiteSpace = 'pre-line';
+    }
+    thumbBox.onclick = function () { post({ type: 'pickPresetImage' }); };
+    creator.appendChild(thumbBox);
+
+    var fields = document.createElement('div');
+    fields.className = 'creator-fields';
+
+    var row = document.createElement('div');
+    row.className = 'creator-row';
+
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = U('presetNamePh');
+    nameInput.value = draftPresetName;
+    nameInput.oninput = function () { draftPresetName = nameInput.value; };
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'btn primary inline';
+    saveBtn.textContent = U('presetSaveBtn');
+    saveBtn.onclick = function () {
+      post({
+        type: 'saveVisualPreset',
+        name: nameInput.value.trim(),
+        customImagePath: draftPresetPath || ''
+      });
+      draftPresetName = '';
+      draftPresetPath = '';
+      draftPresetPreview = '';
+    };
+    nameInput.onkeydown = function (e) { if (e.key === 'Enter') saveBtn.click(); };
+
+    row.appendChild(nameInput);
+    row.appendChild(saveBtn);
+    fields.appendChild(row);
+
+    var hint = document.createElement('div');
+    hint.className = 'creator-hint';
+    hint.textContent = U('presetCreatorHint');
+    fields.appendChild(hint);
+
+    creator.appendChild(fields);
+    main.appendChild(creator);
+
+    if (!list.length) {
+      var emp = document.createElement('div');
+      emp.className = 'empty';
+      emp.textContent = U('presetEmpty');
+      main.appendChild(emp);
+      return;
+    }
+
+    var grid = document.createElement('div');
+    grid.className = 'preset-grid';
+
+    list.forEach(function (p) {
+      var tile = document.createElement('div');
+      tile.className = 'preset-tile' + (state.app && state.app.activePresetId === p.id ? ' active' : '');
+      tile.onclick = function () {
+        post({ type: 'applyVisualPreset', id: p.id });
+      };
+
+      if (p.thumbnail) {
+        var img = document.createElement('img');
+        img.src = p.thumbnail;
+        img.alt = p.name;
+        tile.appendChild(img);
+      } else {
+        var ph = document.createElement('div');
+        ph.className = 'preset-placeholder';
+        ph.textContent = '♪';
+        tile.appendChild(ph);
+      }
+
+      var cap = document.createElement('div');
+      cap.className = 'preset-caption';
+      cap.textContent = p.name;
+      cap.title = p.name;
+      tile.appendChild(cap);
+
+      var acts = document.createElement('div');
+      acts.className = 'preset-actions';
+
+      function mkAct(icon, tip, cls, fn) {
+        var b = document.createElement('button');
+        b.className = 'preset-act' + (cls ? ' ' + cls : '');
+        b.textContent = icon;
+        b.title = tip;
+        b.onclick = function (e) { e.stopPropagation(); fn(); };
+        acts.appendChild(b);
+      }
+
+      mkAct('🖼', U('actPhoto'), '', function () {
+        post({ type: 'pickPresetImage', id: p.id });
+      });
+      mkAct('💾', U('actOverwrite'), '', function () {
+        if (confirm(U('confirmOverwrite', { name: p.name }))) {
+          post({ type: 'overwriteVisualPreset', id: p.id });
+        }
+      });
+      mkAct('✏', U('actRename'), '', function () {
+        var nn = prompt(U('promptRename'), p.name);
+        if (nn && nn.trim()) post({ type: 'renameVisualPreset', id: p.id, name: nn.trim() });
+      });
+      mkAct('🗑', U('actDelete'), 'del', function () {
+        if (confirm(U('confirmDelete', { name: p.name }))) {
+          post({ type: 'deleteVisualPreset', id: p.id });
+        }
+      });
+
+      tile.appendChild(acts);
+      grid.appendChild(tile);
+    });
+
+    main.appendChild(grid);
+  }
+
+  function renderAppTab(main) {
+    var h = document.createElement('div');
+    h.className = 'section-title';
+    h.textContent = U('appTitle');
+    main.appendChild(h);
+
+    var card = document.createElement('div');
+    card.className = 'card';
+
+    function addAppRow(title, hint, controlEl) {
+      var r = document.createElement('div');
+      r.className = 'row';
+      var l = document.createElement('div');
+      l.className = 'row-label';
+      var n = document.createElement('div'); n.className = 'row-name'; n.textContent = title;
+      l.appendChild(n);
+      if (hint) {
+        var ht = document.createElement('div'); ht.className = 'row-hint'; ht.textContent = hint;
+        l.appendChild(ht);
+      }
+      var c = document.createElement('div');
+      c.className = 'row-ctrl';
+      c.appendChild(controlEl);
+      r.appendChild(l);
+      r.appendChild(c);
+      card.appendChild(r);
+    }
+
+    // Settings UI Language
+    var langSel = document.createElement('select');
+    [
+      { v: 'auto', l: U('langAuto') },
+      { v: 'ru', l: 'Русский' },
+      { v: 'en', l: 'English' },
+      { v: 'zh', l: '中文' },
+      { v: 'ja', l: '日本語' },
+      { v: 'ko', l: '한국어' }
+    ].forEach(function (o) {
+      var op = document.createElement('option');
+      op.value = o.v; op.textContent = o.l;
+      if ((state.app.uiLanguage || 'auto') === o.v) op.selected = true;
+      langSel.appendChild(op);
+    });
+    langSel.onchange = function () { updateApp({ uiLanguage: langSel.value }, true); };
+    addAppRow(U('uiLang'), U('uiLangHint'), langSel);
+
+    // Display mode
+    var modeSel = document.createElement('select');
+    [
+      { v: 'desktop', l: U('modeDesktop') },
+      { v: 'window', l: U('modeWindow') }
+    ].forEach(function (o) {
+      var op = document.createElement('option');
+      op.value = o.v; op.textContent = o.l;
+      if ((state.app.displayMode || 'desktop') === o.v) op.selected = true;
+      modeSel.appendChild(op);
+    });
+    modeSel.onchange = function () { updateApp({ displayMode: modeSel.value }); };
+    addAppRow(U('displayMode'), U('displayModeHint'), modeSel);
+
+    // Monitor
+    var monSel = document.createElement('select');
+    var defMon = document.createElement('option');
+    defMon.value = ''; defMon.textContent = U('primaryMonitor');
+    monSel.appendChild(defMon);
+    (state.monitors || []).forEach(function (m) {
+      var op = document.createElement('option');
+      op.value = m.deviceName; op.textContent = m.label;
+      if (state.app.monitorDeviceName === m.deviceName) op.selected = true;
+      monSel.appendChild(op);
+    });
+    monSel.onchange = function () { updateApp({ monitorDeviceName: monSel.value }); };
+    addAppRow(U('monitor'), U('monitorHint'), monSel);
+
+    // Audio device
+    var audSel = document.createElement('select');
+    var defAud = document.createElement('option');
+    defAud.value = ''; defAud.textContent = U('defaultAudio');
+    audSel.appendChild(defAud);
+    (state.audioDevices || []).forEach(function (d) {
+      var op = document.createElement('option');
+      op.value = d.id; op.textContent = d.name;
+      if (state.app.audioDeviceId === d.id) op.selected = true;
+      audSel.appendChild(op);
+    });
+    audSel.onchange = function () { updateApp({ audioDeviceId: audSel.value }); };
+    addAppRow(U('audioDev'), U('audioDevHint'), audSel);
+
+    // Audio FPS
+    var fpsSel = document.createElement('select');
+    [24, 30, 45, 60].forEach(function (f) {
+      var op = document.createElement('option');
+      op.value = f; op.textContent = f + ' FPS';
+      if (Number(state.app.audioFps || 30) === f) op.selected = true;
+      fpsSel.appendChild(op);
+    });
+    fpsSel.onchange = function () { updateApp({ audioFps: Number(fpsSel.value) }); };
+    addAppRow(U('audioFps'), U('audioFpsHint'), fpsSel);
+
+    // Pause on fullscreen
+    var fsLbl = document.createElement('label');
+    fsLbl.className = 'switch';
+    var fsCb = document.createElement('input');
+    fsCb.type = 'checkbox';
+    fsCb.checked = state.app.pauseOnFullscreen !== false;
+    fsCb.onchange = function () { updateApp({ pauseOnFullscreen: fsCb.checked }); };
+    var fsTr = document.createElement('span'); fsTr.className = 'switch-track';
+    fsLbl.appendChild(fsCb); fsLbl.appendChild(fsTr);
+    addAppRow(U('pauseFs'), U('pauseFsHint'), fsLbl);
+
+    // Autostart
+    var autoLbl = document.createElement('label');
+    autoLbl.className = 'switch';
+    var autoCb = document.createElement('input');
+    autoCb.type = 'checkbox';
+    autoCb.checked = !!state.app.autostart;
+    autoCb.onchange = function () { updateApp({ autostart: autoCb.checked }); };
+    var autoTr = document.createElement('span'); autoTr.className = 'switch-track';
+    autoLbl.appendChild(autoCb); autoLbl.appendChild(autoTr);
+    addAppRow(U('autostart'), U('autostartHint'), autoLbl);
+
+    main.appendChild(card);
+  }
+
+  function renderMain() {
+    var main = document.getElementById('main');
+    main.innerHTML = '';
+
+    if (searchQuery) {
+      var q = searchQuery.toLowerCase();
+      var h = document.createElement('div');
+      h.className = 'section-title';
+      h.textContent = U('searchTitle', { q: searchQuery });
+      main.appendChild(h);
+
+      var found = 0;
+      groups.forEach(function (g) {
+        var matches = g.items.filter(function (it) {
+          var label = L(it.def.text || '').toLowerCase();
+          return label.includes(q) || it.key.toLowerCase().includes(q);
+        });
+        if (!matches.length) return;
+        found += matches.length;
+
+        var gh = document.createElement('div');
+        gh.className = 'group-heading';
+        gh.textContent = groupTitle(g);
+        main.appendChild(gh);
+
+        var card = document.createElement('div');
+        card.className = 'card';
+        matches.forEach(function (m) {
+          var row = createPropertyRow(m);
+          row.style.display = '';
+          card.appendChild(row);
+        });
+        main.appendChild(card);
+      });
+
+      if (!found) {
+        var emp = document.createElement('div');
+        emp.className = 'empty';
+        emp.textContent = U('nothingFound');
+        main.appendChild(emp);
+      }
+      return;
+    }
+
+    if (activeTab === '__presets__') {
+      renderPresetsTab(main);
+      return;
+    }
+
+    if (activeTab === '__app__') {
+      renderAppTab(main);
+      return;
+    }
+
+    var grp = groups.find(function (g) { return g.id === activeTab; });
+    if (!grp) return;
+
+    var head = document.createElement('div');
+    head.className = 'section-head';
+    var title = document.createElement('div');
+    title.className = 'section-title';
+    title.textContent = groupNavLabel(grp);
+    head.appendChild(title);
+
+    var resetSecBtn = document.createElement('button');
+    resetSecBtn.className = 'btn inline';
+    resetSecBtn.textContent = U('resetSection');
+    resetSecBtn.onclick = function () {
+      if (confirm(U('confirmResetSection', { name: groupTitle(grp) }))) {
+        post({ type: 'resetSection', keys: grp.items.map(function (it) { return it.key; }) });
+      }
+    };
+    head.appendChild(resetSecBtn);
+    main.appendChild(head);
+
+    var SUB_DEFS = {
+      bggroup: [
+        { title: 'subBgType', keys: ['bgmode'] },
+        { title: 'subBgOpts', rest: true }
+      ],
+      textgroup: [
+        { title: 'subLayoutFont', keys: ['layoutmode', 'offset', 'fontsize', 'dimamount'] },
+        { title: 'subAnim', keys: ['lyricmode', 'typefill', 'typecursor', 'lyriclift', 'lyricblur'] },
+        { title: 'subColors', rest: true }
+      ],
+      strokegroup: [
+        { title: 'subOutline', keys: ['textshadow', 'activeshadow', 'strokecmode', 'strokecolor', 'activestrokecmode', 'activestrokecolor'] },
+        { title: 'subPlate', rest: true }
+      ],
+      infogroup: [
+        { title: 'subInfoStyle', keys: ['infotextcmode', 'infotextcolor', 'infoshadow', 'infostrokecmode', 'infostrokecolor'] },
+        { title: 'subInfoPlate', keys: ['infoplate', 'infoplateamount', 'infoplatecmode', 'infoplatecolor', 'infobarcmode', 'infobarcolor'] },
+        { title: 'subPosition', rest: true }
+      ],
+      clockgroup: [
+        { title: 'subClockDisp', keys: ['clockshow', 'clockformat', 'clockseconds', 'clockweekday', 'clockdate'] },
+        { title: 'subClockLook', keys: ['clocksize', 'clockcmode', 'clockcolor', 'clockshadow', 'clockstrokecmode', 'clockstrokecolor'] },
+        { title: 'subPosition', rest: true }
+      ],
+      ctrlgroup: [
+        { title: 'subCtrlStyle', keys: ['mediacontrols', 'ctrlstyle'] },
+        { title: 'subCtrlExtra', rest: true }
+      ]
+    };
+
+    var subDefs = SUB_DEFS[grp.id];
+    if (subDefs) {
+      var used = {};
+      subDefs.forEach(function (sd) {
+        var items = sd.rest
+          ? grp.items.filter(function (it) { return !used[it.key]; })
+          : grp.items.filter(function (it) { return sd.keys.indexOf(it.key) >= 0; });
+        items.forEach(function (it) { used[it.key] = 1; });
+        if (!items.length) return;
+
+        var wrap = document.createElement('div');
+        wrap.className = 'sub-card-wrap';
+        var sh = document.createElement('div');
+        sh.className = 'sub-heading';
+        sh.textContent = U(sd.title);
+        wrap.appendChild(sh);
+
+        var card = document.createElement('div');
+        card.className = 'card';
+        items.forEach(function (it) { card.appendChild(createPropertyRow(it)); });
+        wrap.appendChild(card);
+        main.appendChild(wrap);
+      });
+      updateConditions();
+    } else {
+      var card = document.createElement('div');
+      card.className = 'card';
+      grp.items.forEach(function (it) {
+        card.appendChild(createPropertyRow(it));
+      });
+      main.appendChild(card);
+    }
+  }
+
+  document.getElementById('search').addEventListener('input', function (e) {
+    searchQuery = e.target.value.trim();
+    renderNav();
+    renderMain();
+  });
+
+  document.getElementById('btnReset').onclick = function () {
+    if (confirm(U('confirmReset'))) {
+      post({ type: 'resetDefaults' });
+      showToast(U('toastReset'));
+    }
+  };
+  document.getElementById('btnExport').onclick = function () { post({ type: 'exportPreset' }); };
+  document.getElementById('btnImport').onclick = function () { post({ type: 'importPreset' }); };
+
+  if (window.chrome && window.chrome.webview) {
+    window.chrome.webview.addEventListener('message', function (ev) {
+      var msg = ev.data;
+      if (!msg) return;
+      if (msg.type === 'init') {
+        state = msg.state || state;
+        applyChromeI18n();
+        renderNav();
+        renderMain();
+      } else if (msg.type === 'filePicked') {
+        state.values[msg.key] = msg.path;
+        var el = document.getElementById('file-' + msg.key);
+        if (el) {
+          el.textContent = String(msg.path).split(/[\\/]/).pop();
+          el.title = msg.path;
+        }
+      } else if (msg.type === 'presetImagePicked') {
+        draftPresetPath = msg.path || '';
+        draftPresetPreview = msg.preview || '';
+        if (activeTab === '__presets__') renderMain();
+      } else if (msg.type === 'toast') {
+        showToast(msg.text);
+      } else if (msg.type === 'toastKey') {
+        showToast(U(msg.key));
+      }
+    });
+  }
+
+  fetch('/project.json')
+    .then(function (r) { return r.json(); })
+    .then(function (proj) {
+      localization = (proj && proj.general && proj.general.localization) || {};
+      buildGroupsFromSchema(proj && proj.general && proj.general.properties);
+      applyChromeI18n();
+      post({ type: 'ready' });
+    })
+    .catch(function () {
+      applyChromeI18n();
+      post({ type: 'ready' });
+    });
+})();
+</script>
+</body>
+</html>
