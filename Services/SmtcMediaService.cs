@@ -4,7 +4,12 @@ using Windows.Storage.Streams;
 namespace SpotifyLyricsWallpaper.Services;
 
 public sealed record MediaPropsPayload(string Title, string Artist, string AlbumTitle);
-public sealed record MediaTimelinePayload(double Position, double Duration);
+public sealed record MediaTimelinePayload(
+    double Position,
+    double Duration,
+    double PlaybackRate = 1.0,
+    long SentUnixMs = 0,
+    bool IsFreshUpdate = true);
 public sealed record MediaPlaybackPayload(int State); // 0 = Stopped, 1 = Playing, 2 = Paused
 public sealed record MediaThumbnailPayload(string Thumbnail);
 
@@ -19,6 +24,10 @@ public sealed class SmtcMediaService : IDisposable
     private System.Threading.Timer? _timelineTimer;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private bool _disposed;
+    private DateTimeOffset _lastReportedUpdateTime = DateTimeOffset.MinValue;
+    private double _lastReportedRawPos = -1;
+    private double _lastReportedDuration = -1;
+    private double _lastReportedRate = 1.0;
 
     public MediaPropsPayload LastProps { get; private set; } = new("", "", "");
     public MediaTimelinePayload LastTimeline { get; private set; } = new(0, 0);
@@ -39,8 +48,8 @@ public sealed class SmtcMediaService : IDisposable
             _manager.SessionsChanged += OnSessionsUpdated;
             await AttachBestSessionAsync();
 
-            // Periodic 1s timeline sync so lyric timing stays rock-solid even when players throttle SMTC events
-            _timelineTimer = new System.Threading.Timer(_ => PushTimelineSnapshot(), null, 1000, 1000);
+            // Periodic 1s check in case a player updates timeline silently without firing TimelinePropertiesChanged
+            _timelineTimer = new System.Threading.Timer(_ => PushTimelineSnapshot(force: false), null, 1000, 1000);
         }
         catch
         {
@@ -129,6 +138,15 @@ public sealed class SmtcMediaService : IDisposable
         }
         catch { }
         _session = null;
+        ResetTimelineTracking();
+    }
+
+    private void ResetTimelineTracking()
+    {
+        _lastReportedUpdateTime = DateTimeOffset.MinValue;
+        _lastReportedRawPos = -1;
+        _lastReportedDuration = -1;
+        _lastReportedRate = 1.0;
     }
 
     private void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
@@ -202,7 +220,7 @@ public sealed class SmtcMediaService : IDisposable
         catch { }
     }
 
-    private void PushTimelineSnapshot()
+    private void PushTimelineSnapshot(bool force = true)
     {
         if (_disposed) return;
         var s = _session;
@@ -215,24 +233,42 @@ public sealed class SmtcMediaService : IDisposable
 
             var info = s.GetPlaybackInfo();
             bool isPlaying = info?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+            double rate = info?.PlaybackRate is double r && r > 0.1 && r <= 4.0 ? r : 1.0;
 
             double duration = Math.Max(0, (tl.EndTime - tl.StartTime).TotalSeconds);
-            double pos = (tl.Position - tl.StartTime).TotalSeconds;
+            double rawPos = (tl.Position - tl.StartTime).TotalSeconds;
 
-            // Compensate for elapsed wall-clock time since LastUpdatedTime while playing
-            if (isPlaying && tl.LastUpdatedTime != DateTimeOffset.MinValue)
+            // Avoid spamming identical extrapolated snapshots every second when the player hasn't updated SMTC
+            bool isFresh = force ||
+                tl.LastUpdatedTime != _lastReportedUpdateTime ||
+                Math.Abs(rawPos - _lastReportedRawPos) > 0.001 ||
+                Math.Abs(duration - _lastReportedDuration) > 0.05 ||
+                Math.Abs(rate - _lastReportedRate) > 0.001;
+
+            if (!isFresh) return;
+
+            _lastReportedUpdateTime = tl.LastUpdatedTime;
+            _lastReportedRawPos = rawPos;
+            _lastReportedDuration = duration;
+            _lastReportedRate = rate;
+
+            var nowUtc = DateTimeOffset.UtcNow;
+            double pos = rawPos;
+
+            // Compensate for elapsed wall-clock time since LastUpdatedTime while playing (scaled by PlaybackRate)
+            if (isPlaying && tl.LastUpdatedTime > DateTimeOffset.MinValue.AddYears(1))
             {
-                double elapsed = (DateTimeOffset.UtcNow - tl.LastUpdatedTime).TotalSeconds;
+                double elapsed = (nowUtc - tl.LastUpdatedTime).TotalSeconds;
                 if (elapsed > 0 && elapsed < 3600)
                 {
-                    pos += elapsed;
+                    pos += elapsed * rate;
                 }
             }
 
             if (duration > 0) pos = Math.Clamp(pos, 0, duration);
             else pos = Math.Max(0, pos);
 
-            var payload = new MediaTimelinePayload(pos, duration);
+            var payload = new MediaTimelinePayload(pos, duration, rate, nowUtc.ToUnixTimeMilliseconds(), isFresh);
             LastTimeline = payload;
             TimelineChanged?.Invoke(payload);
         }
@@ -241,6 +277,7 @@ public sealed class SmtcMediaService : IDisposable
 
     private void EmitEmpty()
     {
+        ResetTimelineTracking();
         LastProps = new("", "", "");
         LastPlayback = new(0);
         LastTimeline = new(0, 0);

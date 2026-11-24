@@ -244,7 +244,14 @@ public sealed class WallpaperForm : Form
         var json = JsonSerializer.Serialize(new
         {
             type = "mediaTimeline",
-            data = new { position = t.Position, duration = t.Duration }
+            data = new
+            {
+                position = t.Position,
+                duration = t.Duration,
+                playbackRate = t.PlaybackRate,
+                sentUnixMs = t.SentUnixMs,
+                isFresh = t.IsFreshUpdate
+            }
         });
         PostJsonSafe(json);
     }

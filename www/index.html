@@ -548,12 +548,12 @@
     title: '', artist: '', album: '',
     duration: 0,
     basePos: 0, baseTime: performance.now(),
-    playing: false,
+    playing: false, playbackRate: 1,
     lyrics: [], lineEls: [], activeIdx: -2,
-    offset: 1, lastPos: 0,
+    offset: 1, trackOffset: 0, lastPos: 0,
     fetchToken: 0, coverToken: 0, thumbAt: 0, timelineAt: 0, lastThumb: '', hdShown: false, thumbImg: null, thumbLogo: false, coverInfo: '', msgKey: '', changeAt: 0,
     hdDone: false, lyricsState: 'none',   // none | unknown | found
-    meta: { title: '', artist: '' }, cand: [], lyricId: null,
+    meta: { title: '', artist: '' }, cand: [], lyricId: null, lyricExact: false,
     bgMode: 'waves',
     avg: [34, 34, 34], avgLum: 0.1,
     palette: [{ c: [18, 18, 28], w: 0.5 }, { c: [70, 70, 110], w: 0.5 }],
@@ -796,16 +796,20 @@
   }
   function dbgRender() {
     if ($('dbg').style.display !== 'block') return;
-    var pos = state.title ? Math.min(state.duration || 1e9, Math.max(0, currentPos() - state.offset)) : 0;
+    var pos = state.title ? Math.min(state.duration || 1e9, Math.max(0, rawPos())) : 0;
     var lyr = state.lyricsState === 'found' ? 'найден, ' + state.lyrics.length + ' строк' : (state.lyricsState === 'unknown' ? 'ищу…' : 'не найден');
+    var rateStr = (state.playbackRate && Math.abs(state.playbackRate - 1) > 0.01) ? ' · ' + state.playbackRate.toFixed(2) + 'x' : '';
+    var totOff = effectiveOffset();
+    var offStr = (totOff >= 0 ? '+' : '') + totOff.toFixed(2) + ' с' +
+      (Math.abs(state.trackOffset) > 0.001 ? ' (трек: ' + (state.trackOffset >= 0 ? '+' : '') + state.trackOffset.toFixed(2) + ' с)' : '');
     function row(k, v) { return '<div class="row"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
     $('dbgNow').innerHTML =
       row('Трек', state.title ? esc(state.meta.title || state.title) + ' — ' + esc(state.meta.artist || state.artist) : 'ничего не играет') +
       row('Альбом', esc(state.album || '—')) +
-      row('Состояние', (state.playing ? '▶ играет' : '⏸ пауза / стоп') + (state.title ? ' · ' + fmt(pos) + ' из ' + (state.duration ? fmt(state.duration) : '?') : '')) +
+      row('Состояние', (state.playing ? '▶ играет' : '⏸ пауза / стоп') + (state.title ? ' · ' + fmt(pos) + ' из ' + (state.duration ? fmt(state.duration) : '?') + rateStr : '')) +
       row('Текст', lyr) +
       row('Обложка', esc(state.coverInfo || '—')) +
-      row('Сдвиг текста', (state.offset >= 0 ? '+' : '') + state.offset.toFixed(2) + ' с');
+      row('Сдвиг текста', offStr);
     $('dbgLog').innerHTML = dbgLines.map(function (l) {
       return '<div class="ev"><div class="t">' + l.t + '</div><div class="v ' + l.kind + '">' + esc(l.msg) + '</div></div>';
     }).join('');
@@ -852,11 +856,90 @@
     var a = (artist || '').replace(/\s*-\s*Topic\s*$/i, '').replace(/\s*VEVO\s*$/i, '').trim();
     var t = (title || '').trim();
     var pre = (a + ' - ').toLowerCase();
-    if (a && t.toLowerCase().indexOf(pre) === 0) t = t.slice(pre.length);
-    t = t.replace(/\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|remaster(ed)?|visuali[sz]er|hd|hq|4k|mv)\b[^\)\]]*[\)\]]/ig, '')
-         .replace(/\s*[\(\[]\s*(feat|ft)\.?[^\)\]]*[\)\]]/ig, '').trim();
+    if (a && t.toLowerCase().indexOf(pre) === 0) t = t.slice(pre.length).trim();
+    t = t.replace(/\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|remaster(ed)?|visuali[sz]er|hd|hq|4k|mv|live|explicit|clean|version|edit|radio)\b[^\)\]]*[\)\]]/ig, '')
+         .replace(/\s*[\(\[]\s*(feat|ft|with)\.?[^\)\]]*[\)\]]/ig, '')
+         .replace(/\s+\b(feat|ft)\.?\s+.*$/i, '').trim();
     return { title: t || title || '', artist: a };
   }
+  function stripSubtitle(title) {
+    var s = (title || '').replace(/\s+[-–—]\s+.*$/, '').trim();
+    return s || (title || '');
+  }
+  var ARTIST_SPLIT_RE = /,|&|;|\bfeat\.?\b|\bft\.?\b|\bx\b|\bwith\b|\//i;
+  function getPrimaryArtist(artist) {
+    if (!artist) return '';
+    var parts = String(artist).split(ARTIST_SPLIT_RE).map(function (p) { return p.trim(); }).filter(Boolean);
+    return parts.length ? parts[0] : String(artist).trim();
+  }
+  function getArtistParts(artist) {
+    if (!artist) return [];
+    var seen = {}, out = [];
+    String(artist).split(ARTIST_SPLIT_RE).forEach(function (p) {
+      var n = norm(p);
+      if (n.length >= 2 && !seen[n]) { seen[n] = 1; out.push(n); }
+    });
+    return out;
+  }
+
+  /* ================= Индивидуальный сдвиг текста для трека ================= */
+  var TRACK_OFFSETS_KEY = 'slw_track_offsets_v1';
+  var trackOffsetsMap = {};
+  try {
+    var savedOff = JSON.parse(localStorage.getItem(TRACK_OFFSETS_KEY) || '{}');
+    if (savedOff && typeof savedOff === 'object') trackOffsetsMap = savedOff;
+  } catch (e) {}
+
+  function currentTrackKey() {
+    var t = norm(state.meta.title || state.title), a = norm(state.meta.artist || state.artist);
+    return t ? (a + '|' + t) : '';
+  }
+  function loadTrackOffset() {
+    var k = currentTrackKey();
+    var v = (k && typeof trackOffsetsMap[k] === 'number' && isFinite(trackOffsetsMap[k])) ? trackOffsetsMap[k] : 0;
+    state.trackOffset = v;
+  }
+  function saveTrackOffset(val) {
+    var k = currentTrackKey();
+    if (!k) return;
+    val = Math.round(val * 100) / 100;
+    state.trackOffset = val;
+    if (Math.abs(val) < 0.005) delete trackOffsetsMap[k];
+    else trackOffsetsMap[k] = val;
+    try {
+      var keys = Object.keys(trackOffsetsMap);
+      if (keys.length > 300) delete trackOffsetsMap[keys[0]];
+      localStorage.setItem(TRACK_OFFSETS_KEY, JSON.stringify(trackOffsetsMap));
+    } catch (e) {}
+  }
+  var offsetToastEl = null, offsetToastTimer = null;
+  function showOffsetToast(msg) {
+    if (!offsetToastEl) {
+      offsetToastEl = document.createElement('div');
+      offsetToastEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 16px;border-radius:999px;background:rgba(15,15,20,0.82);color:#fff;font:600 13px/1.2 system-ui,sans-serif;letter-spacing:.02em;backdrop-filter:blur(10px);box-shadow:0 6px 24px rgba(0,0,0,.35);pointer-events:none;opacity:0;transition:opacity .2s ease;';
+      document.body.appendChild(offsetToastEl);
+    }
+    offsetToastEl.textContent = msg;
+    offsetToastEl.style.opacity = '1';
+    clearTimeout(offsetToastTimer);
+    offsetToastTimer = setTimeout(function () { if (offsetToastEl) offsetToastEl.style.opacity = '0'; }, 1600);
+  }
+  function nudgeTrackOffset(delta, reset) {
+    if (!state.title) return;
+    var next = reset ? 0 : Math.max(-15, Math.min(15, state.trackOffset + delta));
+    saveTrackOffset(next);
+    state.lastPos = currentPos();
+    var sign = state.trackOffset >= 0 ? '+' : '';
+    var msg = reset ? 'Сдвиг трека сброшен (0.00 с)' : ('Сдвиг трека: ' + sign + state.trackOffset.toFixed(2) + ' с');
+    dbg('⏱ ' + msg, 'ok');
+    showOffsetToast(msg);
+  }
+  window.addEventListener('keydown', function (ev) {
+    if (ev.target && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
+    if (ev.key === '[') { nudgeTrackOffset(-0.1, false); }
+    else if (ev.key === ']') { nudgeTrackOffset(0.1, false); }
+    else if (ev.key === '\\') { nudgeTrackOffset(0, true); }
+  });
 
   /* ================= Смена трека: затемнение ================= */
   var dimEl = $('dim');
@@ -911,7 +994,11 @@
     $('artist').textContent = state.meta.artist;
 
     beginChange();
-    state.cand = []; state.lyricId = null; state.hdShown = false; state.hdDone = false; state.hdFree = false;
+    state.cand = []; state.lyricId = null; state.lyricExact = false; state.hdShown = false; state.hdDone = false; state.hdFree = false;
+    loadTrackOffset();
+    if (Math.abs(state.trackOffset) > 0.001) {
+      dbg('⏱ Загружен сдвиг для трека: ' + (state.trackOffset >= 0 ? '+' : '') + state.trackOffset.toFixed(2) + ' с', '');
+    }
     // миниатюра нового трека могла прийти раньше названия: показываем её сразу, а не обложку прошлого трека
     if (state.thumbAt > state.changeAt - 1200 && state.thumbImg && !state.thumbLogo && state.lastThumb) {
       coverEl.src = state.lastThumb; coverEl.style.opacity = 1; state.coverInfo = 'миниатюра Windows (ищу HD…)';
@@ -926,29 +1013,40 @@
   });
 
   window.wallpaperRegisterMediaTimelineListener(function (e) {
-    var pred = currentPos() - state.offset, np = e.position || 0;
+    var rate = (typeof e.playbackRate === 'number' && e.playbackRate > 0.1 && e.playbackRate <= 4) ? e.playbackRate : 1;
+    var ipcLag = 0;
+    if (state.playing && typeof e.sentUnixMs === 'number' && e.sentUnixMs > 0) {
+      ipcLag = (Date.now() - e.sentUnixMs) / 1000;
+      if (ipcLag < 0 || ipcLag > 0.5) ipcLag = 0;
+    }
+    var pred = rawPos(), np = (e.position || 0) + ipcLag * rate;
     if (state.title && state.duration && Math.abs(np - pred) > 1.5) {
       dbg((np < pred ? '⏪ Позиция откатилась назад (перемотка или запоздавшие данные): ' : '⏩ Позиция скакнула вперёд (перемотка): ') + 'ожидали ' + fmt(pred) + ', пришло ' + fmt(np), 'warn');
     }
     if (e.duration && Math.abs(e.duration - state.duration) > 0.5) dbg('⏱ Длительность трека от Windows: ' + fmt(e.duration), '');
     var nowT = performance.now();
+    state.playbackRate = rate;
     if (state.playing && state.title && Math.abs(np - pred) < 0.8 && nowT - state.baseTime < 5000) {
-      // позиция от Windows приходит неровно (с округлением и задержкой) — мелкие расхождения сглаживаем,
+      // позиция от Windows приходит с небольшим джиттером — мелкие расхождения сглаживаем,
       // иначе текст «дёргается» и может откатиться на строку назад. Настоящая перемотка (>0.8 с) применяется сразу.
-      state.basePos = pred + (np - pred) * 0.25;
+      state.basePos = pred + (np - pred) * 0.35;
     } else state.basePos = np;
     state.baseTime = nowT;
     state.timelineAt = state.baseTime;
+    var prevDur = state.duration;
     var nd = e.duration || 0;
     var durChanged = nd && Math.abs(nd - state.duration) > 0.5;
     state.duration = nd || state.duration;
-    if (durChanged && state.cand.length) pickLyrics();   // длительность уточнилась — выбрать подходящую версию текста
+    if (durChanged) {
+      if (state.cand.length) pickLyrics();                // длительность уточнилась — выбрать подходящую версию текста
+      else if (prevDur <= 0 && !state.lyricExact && state.title && state.lyricsState !== 'unknown') loadLyrics();
+    }
   });
 
   window.wallpaperRegisterMediaPlaybackListener(function (e) {
     var PLAYING = (window.wallpaperMediaIntegration && window.wallpaperMediaIntegration.PLAYBACK_PLAYING);
     if (PLAYING === undefined) PLAYING = 1;
-    state.basePos  = currentPos() - state.offset;
+    state.basePos  = rawPos();
     state.baseTime = performance.now();
     var was = state.playing;
     state.playing  = (e.state === PLAYING);
@@ -2481,47 +2579,114 @@ void main(){
     })(0);
   }
 
-  /* ================= Текст песни (LRCLIB) ================= */
+  /* ================= Текст песни (LRCLIB: точный /api/get + умный /api/search) ================= */
   function artistMatches(name) {
-    var na = norm(state.meta.artist).split(' ')[0] || '', ra = norm(name);
-    return !na || ra.indexOf(na) >= 0 || (ra && na.indexOf(ra) >= 0);
+    var target = state.meta.artist || '';
+    if (!target) return true;
+    var ra = norm(name);
+    if (!ra) return false;
+    var parts = getArtistParts(target);
+    for (var i = 0; i < parts.length; i++) {
+      if (ra.indexOf(parts[i]) >= 0 || parts[i].indexOf(ra) >= 0) return true;
+    }
+    var firstWord = norm(target).split(' ')[0] || '';
+    return !firstWord || ra.indexOf(firstWord) >= 0 || firstWord.indexOf(ra) >= 0;
   }
   function durOK(it) {
-    return !state.duration || Math.abs((it.duration || 0) - state.duration) <= 10;
+    return !state.duration || !it.duration || Math.abs((it.duration || 0) - state.duration) <= 12;
   }
 
   function loadLyrics() {
     var token = ++state.fetchToken, m = state.meta;
     if (!m.title) return;
-    var queries = [
-      { q: 'track_name=' + enc(m.title) + '&artist_name=' + enc(m.artist), loose: false },
-      { q: 'track_name=' + enc(m.title.replace(/\s+-\s+.*$/, '')) + '&artist_name=' + enc(m.artist), loose: false },
-      { q: 'q=' + enc((m.artist + ' ' + m.title).trim()), loose: true },
-      { q: 'track_name=' + enc(m.title), loose: true }
-    ];
+    var title = m.title;
+    var artist = m.artist || '';
+    var album = (state.album || '').trim();
+    var baseTitle = stripSubtitle(title);
+    var primaryArtist = getPrimaryArtist(artist);
     var netErr = false;
-    (function next(i) {
+
+    function runSearchFallback() {
       if (token !== state.fetchToken) return;
-      if (i >= queries.length) { finishLyrics(token, netErr); return; }
-      getJSON('https://lrclib.net/api/search?' + queries[i].q, false)
-        .then(function (list) {
+      var queries = [], seenQ = {};
+      function addQ(q, loose) {
+        var k = q.toLowerCase();
+        if (!seenQ[k]) { seenQ[k] = 1; queries.push({ q: q, loose: loose }); }
+      }
+      if (artist) {
+        addQ('track_name=' + enc(title) + '&artist_name=' + enc(artist), false);
+        if (baseTitle !== title) addQ('track_name=' + enc(baseTitle) + '&artist_name=' + enc(artist), false);
+        if (primaryArtist && primaryArtist.toLowerCase() !== artist.toLowerCase()) {
+          addQ('track_name=' + enc(baseTitle) + '&artist_name=' + enc(primaryArtist), false);
+          addQ('q=' + enc((primaryArtist + ' ' + baseTitle).trim()), true);
+        }
+        addQ('q=' + enc((artist + ' ' + baseTitle).trim()), true);
+      }
+      addQ('track_name=' + enc(baseTitle), true);
+
+      (function next(i) {
+        if (token !== state.fetchToken) return;
+        if (i >= queries.length) { finishLyrics(token, netErr); return; }
+        getJSON('https://lrclib.net/api/search?' + queries[i].q, false)
+          .then(function (list) {
+            if (token !== state.fetchToken) return;
+            var arr = Array.isArray(list) ? list : [];
+            var c = arr.filter(function (it) {
+              return it && it.syncedLyrics && (!queries[i].loose || artistMatches(it.artistName));
+            });
+            if (c.some(durOK)) { state.cand = c; finishLyrics(token, false); }
+            else next(i + 1);
+          })
+          .catch(function () { netErr = true; next(i + 1); });
+      })(0);
+    }
+
+    // Этап 1: точный запрос /api/get с альбомом и длительностью (как в NotchturneWin)
+    if (artist) {
+      var exactQ = 'track_name=' + enc(title) + '&artist_name=' + enc(artist);
+      if (album) exactQ += '&album_name=' + enc(album);
+      if (state.duration > 0) exactQ += '&duration=' + Math.round(state.duration);
+
+      fetch('https://lrclib.net/api/get?' + exactQ)
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (exact) {
           if (token !== state.fetchToken) return;
-          var c = (list || []).filter(function (it) {
-            return it.syncedLyrics && (!queries[i].loose || artistMatches(it.artistName));
-          });
-          if (c.some(durOK)) { state.cand = c; finishLyrics(token, false); }
-          else next(i + 1);
+          if (exact && exact.syncedLyrics) {
+            var parsed = parseLRC(exact.syncedLyrics);
+            if (parsed.length) {
+              state.lyricExact = true;
+              state.cand = [exact];
+              state.lyricId = exact.id || ('exact:' + title);
+              setLyrics(parsed);
+              dbg('📝 Точное совпадение (LRCLIB /api/get): ' + parsed.length + ' строк', 'ok');
+              change.lyricsOk = true;
+              checkChangeDone();
+              return;
+            }
+          }
+          runSearchFallback();
         })
-        .catch(function () { netErr = true; next(i + 1); });
-    })(0);
+        .catch(function () {
+          netErr = true;
+          runSearchFallback();
+        });
+    } else {
+      runSearchFallback();
+    }
   }
 
   function pickLyrics() {
-    var best = null, bd = Infinity;
+    var best = null, bestScore = Infinity;
+    var normAlb = norm(state.album);
     state.cand.forEach(function (it) {
       if (!durOK(it)) return;
-      var d = state.duration ? Math.abs((it.duration || 0) - state.duration) : 0;
-      if (d < bd) { bd = d; best = it; }
+      var d = (state.duration && it.duration) ? Math.abs(it.duration - state.duration) : 3;
+      // бонус за совпадение альбома (меньше score — лучше)
+      if (normAlb && it.albumName) {
+        var ia = norm(it.albumName);
+        if (ia && (ia === normAlb || ia.indexOf(normAlb) >= 0 || normAlb.indexOf(ia) >= 0)) d -= 1.5;
+      }
+      if (d < bestScore) { bestScore = d; best = it; }
     });
     if (!best) {
       if (state.lyricId !== 'none') { state.lyricId = 'none'; setMessage('notfound'); }
@@ -2740,7 +2905,7 @@ void main(){
     var el = $('prog'), on = progStyle !== 'none' && !!state.title && state.duration > 0;
     if (!on) { if (el.style.display !== 'none') el.style.display = 'none'; return -1; }
     if (el.style.display !== 'block') el.style.display = 'block';
-    var pos = Math.min(state.duration, Math.max(0, currentPos() - state.offset)), p = pos / state.duration, s = Math.floor(pos);
+    var pos = Math.min(state.duration, Math.max(0, rawPos())), p = pos / state.duration, s = Math.floor(pos);
     $('pfill').style.width = (p * 100).toFixed(2) + '%';
     if (s !== prog.last) { prog.last = s; $('pcur').textContent = mmss(pos); }
     if (state.duration !== prog.dur) { prog.dur = state.duration; $('pdur').textContent = mmss(state.duration); }
@@ -2828,10 +2993,16 @@ void main(){
   }
 
   /* ================= Синхронизация и цикл отрисовки ================= */
-  function currentPos() {
+  function effectiveOffset() {
+    return (state.offset || 0) + (state.trackOffset || 0);
+  }
+  function rawPos() {
     var p = state.basePos;
-    if (state.playing) p += (performance.now() - state.baseTime) / 1000;
-    return p + state.offset;
+    if (state.playing) p += ((performance.now() - state.baseTime) / 1000) * (state.playbackRate || 1);
+    return p;
+  }
+  function currentPos() {
+    return rawPos() + effectiveOffset();
   }
 
   function findActive(pos) {
@@ -2846,7 +3017,7 @@ void main(){
   // Раскладка: обложка слева, пока есть текст. По центру: нет текста, ничего не играет или трек закончился.
   var lastCentered = true;
   function trackEnded() {
-    return !!state.title && state.duration > 0 && (currentPos() - state.offset) >= state.duration - 0.6;
+    return !!state.title && state.duration > 0 && rawPos() >= state.duration - 0.6;
   }
   function updateLayout() {
     var centered;
@@ -2927,7 +3098,7 @@ void main(){
       var target = Math.max(0, Math.min(state.duration, ratio * state.duration));
       state.basePos = target;
       state.baseTime = performance.now();
-      state.lastPos = target + state.offset;
+      state.lastPos = target + effectiveOffset();
       if (typeof window.slwMediaSeek === 'function') window.slwMediaSeek(target);
     }
     window.__slwHandleSeekRatio = handleSeekRatio;
